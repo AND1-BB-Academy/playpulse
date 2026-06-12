@@ -4,6 +4,7 @@ import './App.css'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
+
 function App() {
   const [newPlayer, setNewPlayer] = useState('')
   const [bench, setBench] = useState([])
@@ -22,6 +23,7 @@ function App() {
   const [draggingPlayer, setDraggingPlayer] = useState(null)
   const [teamName, setTeamName] = useState('TEAM')
   const courtRef = useRef(null)
+  const [showMenu, setShowMenu] = useState(false)
 
 
 
@@ -980,7 +982,24 @@ function App() {
 
         </div>
 
-        <div className="plan-badge">FREE</div>
+        <div className="header-right">
+          <div className="plan-badge">FREE</div>
+
+          <button
+            className="menu-button"
+            onClick={() => setShowMenu(!showMenu)}
+          >
+            ☰
+          </button>
+
+          {showMenu && (
+            <div className="menu-dropdown">
+              <a href="/terms.html">利用規約</a>
+              <a href="/privacy.html">プライバシーポリシー</a>
+              <a href="/contact.html">お問い合わせ</a>
+            </div>
+          )}
+        </div>
       </header>
 
       <main className="three-column-layout">
