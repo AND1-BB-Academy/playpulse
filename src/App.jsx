@@ -1253,6 +1253,7 @@ function App() {
             }
           }}
         >
+          <option value={6 * 60}>6:00</option>
           <option value={8 * 60}>8:00</option>
           <option value={10 * 60}>10:00</option>
           <option value={12 * 60}>12:00</option>
