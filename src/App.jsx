@@ -8,7 +8,7 @@ import autoTable from 'jspdf-autotable'
 function AdSenseSidebar() {
   useEffect(() => {
     try {
-      ;(window.adsbygoogle = window.adsbygoogle || []).push({})
+      ; (window.adsbygoogle = window.adsbygoogle || []).push({})
     } catch (e) {
       console.log(e)
     }
