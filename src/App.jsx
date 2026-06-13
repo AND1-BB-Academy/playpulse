@@ -5,6 +5,28 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
 
+function AdSenseSidebar() {
+  useEffect(() => {
+    try {
+      ;(window.adsbygoogle = window.adsbygoogle || []).push({})
+    } catch (e) {
+      console.log(e)
+    }
+  }, [])
+
+  return (
+    <ins
+      className="adsbygoogle"
+      style={{ display: 'block' }}
+      data-ad-client="ca-pub-8489543486493884"
+      data-ad-slot="2502605483"
+      data-ad-format="auto"
+      data-full-width-responsive="true"
+    />
+  )
+}
+
+
 function App() {
   const [newPlayer, setNewPlayer] = useState('')
   const [bench, setBench] = useState([])
@@ -1005,8 +1027,11 @@ function App() {
       <main className="three-column-layout">
         <aside className="left-ad-panel">
           <div className="ad-box">
-            <div className="ad-label">AD</div>
-            <div className="ad-text">Upgrade to PlayPulse Pro</div>
+            <AdSenseSidebar />
+
+            <div className="ad-text">
+              Upgrade to PlayPulse Pro
+            </div>
           </div>
         </aside>
 
