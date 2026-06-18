@@ -1,28 +1,39 @@
 <!doctype html>
 <html lang="ja">
-  <head>
-    <meta charset="UTF-8" />
 
-    <link rel="icon" type="image/png" href="/playpulse-favicon.png?v=2" />
+<head>
+  <meta charset="UTF-8" />
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/png" href="/playpulse-favicon.png?v=2" />
 
-    <meta
-      name="description"
-      content="PlayPulseはバスケットボールの試合分析、ショットチャート作成、スタッツ集計、PDF出力ができる無料アプリです。"
-    />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <script
-      async
-      src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8489543486493884"
-      crossorigin="anonymous"
-    ></script>
+  <meta name="description" content="PlayPulseはバスケットボールの試合分析、ショットチャート作成、スタッツ集計、PDF出力ができる無料アプリです。" />
 
-    <title>PlayPulse | Basketball Shot Chart Analyzer</title>
-  </head>
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8489543486493884"
+    crossorigin="anonymous"></script>
 
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+  <!-- Google Analytics (GA4) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-QPDJL6VREE"></script>
+
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+
+    gtag('js', new Date());
+
+    gtag('config', 'G-XXXXXXXXXX');
+  </script>
+
+  <title>PlayPulse | Basketball Shot Chart Analyzer</title>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+
 </html>
