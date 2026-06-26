@@ -4,6 +4,19 @@ import './App.css'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
+const createInitialTeamState = (teamName) => ({
+  teamName,
+  newPlayer: '',
+  bench: [],
+  onCourt: [],
+  shots: [],
+  events: [],
+  selectedPlayer: null,
+  subOutPlayer: null,
+  playerMinutes: {},
+  draggingPlayer: null,
+})
+
 
 function AdSenseSidebar() {
   useEffect(() => {
@@ -28,24 +41,93 @@ function AdSenseSidebar() {
 
 
 function App() {
-  const [newPlayer, setNewPlayer] = useState('')
-  const [bench, setBench] = useState([])
-  const [onCourt, setOnCourt] = useState([])
-  const [shots, setShots] = useState([])
-  const [events, setEvents] = useState([])
-  const [selectedPlayer, setSelectedPlayer] = useState(null)
-  const [subOutPlayer, setSubOutPlayer] = useState(null)
+  const isPro = true
+
+  const [activeTeamKey, setActiveTeamKey] = useState('teamA')
+  const [teams, setTeams] = useState({
+    teamA: createInitialTeamState('HOME'),
+    teamB: createInitialTeamState('AWAY'),
+  })
+
   const [videoUrl, setVideoUrl] = useState(null)
   const videoRef = useRef(null)
   const [periodLength, setPeriodLength] = useState(10 * 60)
   const [quarter, setQuarter] = useState(1)
   const [gameSeconds, setGameSeconds] = useState(10 * 60)
   const [isTimerRunning, setIsTimerRunning] = useState(false)
-  const [playerMinutes, setPlayerMinutes] = useState({})
-  const [draggingPlayer, setDraggingPlayer] = useState(null)
-  const [teamName, setTeamName] = useState('TEAM')
   const courtRef = useRef(null)
   const [showMenu, setShowMenu] = useState(false)
+  const currentTeamKey = isPro ? activeTeamKey : 'teamA'
+
+  const activeTeam = teams[currentTeamKey]
+
+  const {
+    teamName,
+    newPlayer,
+    bench,
+    onCourt,
+    shots,
+    events,
+    selectedPlayer,
+    subOutPlayer,
+    playerMinutes,
+    draggingPlayer,
+  } = activeTeam
+
+
+
+  const updateTeamField = (teamKey, field, nextValue) => {
+    setTeams((prev) => {
+      const targetTeam = prev[teamKey]
+
+      const resolvedValue =
+        typeof nextValue === 'function'
+          ? nextValue(targetTeam[field])
+          : nextValue
+
+      return {
+        ...prev,
+        [teamKey]: {
+          ...targetTeam,
+          [field]: resolvedValue,
+        },
+      }
+    })
+  }
+
+  const updateActiveTeamField = (field, nextValue) => {
+    updateTeamField(currentTeamKey, field, nextValue)
+  }
+
+  const setTeamName = (nextValue) =>
+    updateActiveTeamField('teamName', nextValue)
+
+  const setNewPlayer = (nextValue) =>
+    updateActiveTeamField('newPlayer', nextValue)
+
+  const setBench = (nextValue) =>
+    updateActiveTeamField('bench', nextValue)
+
+  const setOnCourt = (nextValue) =>
+    updateActiveTeamField('onCourt', nextValue)
+
+  const setShots = (nextValue) =>
+    updateActiveTeamField('shots', nextValue)
+
+  const setEvents = (nextValue) =>
+    updateActiveTeamField('events', nextValue)
+
+  const setSelectedPlayer = (nextValue) =>
+    updateActiveTeamField('selectedPlayer', nextValue)
+
+  const setSubOutPlayer = (nextValue) =>
+    updateActiveTeamField('subOutPlayer', nextValue)
+
+  const setPlayerMinutes = (nextValue) =>
+    updateActiveTeamField('playerMinutes', nextValue)
+
+  const setDraggingPlayer = (nextValue) =>
+    updateActiveTeamField('draggingPlayer', nextValue)
 
 
 
@@ -75,6 +157,19 @@ function App() {
 
     return data.totalSeconds
   }
+
+  const getTeamScore = (teamKey) => {
+    return teams[teamKey].shots.reduce((total, shot) => {
+      if (shot.result !== 'make') return total
+
+      if (shot.shotType === '3PT') return total + 3
+      if (shot.shotType === '2PT') return total + 2
+      if (shot.shotType === 'FT') return total + 1
+
+      return total
+    }, 0)
+  }
+
   const drawShotChartOnPdf = (doc, playerNumber, x, y) => {
     const chartW = 150
     const chartH = 108
@@ -367,12 +462,16 @@ function App() {
     e.preventDefault()
   }
 
+  const handleCourtClickForTeam = (teamKey, e) => {
+    const team = teams[teamKey]
+    const targetPlayer = team.selectedPlayer
 
-  const handleCourtClick = (e) => {
-    if (!selectedPlayer) {
+    if (!targetPlayer) {
       alert('ON COURTの選手を選択してください')
       return
     }
+
+    setActiveTeamKey(teamKey)
 
     const svg = e.currentTarget
 
@@ -388,16 +487,26 @@ function App() {
 
     const newShot = {
       id: Date.now(),
-      player: selectedPlayer,
+      teamKey,
+      player: targetPlayer,
       x: svgPoint.x,
       y: svgPoint.y,
       shotType,
       result: 'pending',
       quarter,
       clock: formatTime(gameSeconds),
+      note: '',
     }
 
-    setShots([...shots, newShot])
+    updateTeamField(teamKey, 'shots', (prevShots) => [
+      ...prevShots,
+      newShot,
+    ])
+  }
+
+
+  const handleCourtClick = (e) => {
+    handleCourtClickForTeam(currentTeamKey, e)
   }
 
   const addFreeThrow = () => {
@@ -408,11 +517,15 @@ function App() {
 
     const newShot = {
       id: Date.now(),
+      teamKey: currentTeamKey,
       player: selectedPlayer,
       x: null,
       y: null,
       shotType: 'FT',
       result: 'pending',
+      quarter,
+      clock: formatTime(gameSeconds),
+      note: '',
     }
 
     setShots([...shots, newShot])
@@ -426,11 +539,12 @@ function App() {
 
     const newEvent = {
       id: Date.now(),
+      teamKey: currentTeamKey,
       player: selectedPlayer,
       eventType,
       quarter,
       clock: formatTime(gameSeconds),
-      quarter,
+      note: '',
     }
 
     setEvents((prev) => [...prev, newEvent])
@@ -940,28 +1054,68 @@ function App() {
     return () => {
       document.removeEventListener('keydown', handleKeyDown, true)
     }
-  }, [shots, selectedPlayer, events])
+  }, [
+    shots,
+    selectedPlayer,
+    events,
+    currentTeamKey,
+    gameSeconds,
+    quarter,
+    periodLength,
+  ])
 
-  const newestLogs = [
-    ...shots.map((shot) => ({
-      id: shot.id,
-      player: shot.player,
-      text: `${shot.shotType} ${shot.result === 'make'
-        ? 'MADE'
-        : shot.result === 'miss'
-          ? 'MISS'
-          : 'PENDING'
-        }`,
-      clock: shot.clock,
-    })),
+  const buildTeamLogs = (teamKey) => {
+    const team = teams[teamKey]
 
-    ...events.map((event) => ({
-      id: event.id,
-      player: event.player,
-      text: event.eventType,
-      clock: event.clock,
-    })),
-  ].sort((a, b) => b.id - a.id)
+    return [
+      ...team.shots.map((shot) => ({
+        id: shot.id,
+        teamKey,
+        player: shot.player,
+        text: `${shot.shotType} ${shot.result === 'make'
+          ? 'MADE'
+          : shot.result === 'miss'
+            ? 'MISS'
+            : 'PENDING'
+          }`,
+        clock: shot.clock,
+      })),
+
+      ...team.events.map((event) => ({
+        id: event.id,
+        teamKey,
+        player: event.player,
+        text: event.eventType,
+        clock: event.clock,
+      })),
+    ]
+  }
+
+  const newestLogs = isPro
+    ? [
+      ...buildTeamLogs('teamB'),
+      ...buildTeamLogs('teamA'),
+    ].sort((a, b) => b.id - a.id)
+    : [
+      ...shots.map((shot) => ({
+        id: shot.id,
+        player: shot.player,
+        text: `${shot.shotType} ${shot.result === 'make'
+          ? 'MADE'
+          : shot.result === 'miss'
+            ? 'MISS'
+            : 'PENDING'
+          }`,
+        clock: shot.clock,
+      })),
+
+      ...events.map((event) => ({
+        id: event.id,
+        player: event.player,
+        text: event.eventType,
+        clock: event.clock,
+      })),
+    ].sort((a, b) => b.id - a.id)
 
   const visibleShots = selectedPlayer
     ? shots.filter(
@@ -971,7 +1125,341 @@ function App() {
     )
     : shots.filter((shot) => shot.shotType !== 'FT')
 
+  const getVisibleShotsForTeam = (teamKey) => {
+    const team = teams[teamKey]
+
+    return team.selectedPlayer
+      ? team.shots.filter(
+        (shot) =>
+          shot.player === team.selectedPlayer &&
+          shot.shotType !== 'FT'
+      )
+      : team.shots.filter((shot) => shot.shotType !== 'FT')
+  }
+
   const selectedStats = calculateSelectedStats()
+
+  const addPlayerForTeam = (teamKey) => {
+    const team = teams[teamKey]
+    const number = team.newPlayer.trim()
+
+    if (!number) return
+
+    if (team.bench.includes(number) || team.onCourt.includes(number)) {
+      alert('同じチーム内で同じ背番号は登録できません')
+      return
+    }
+
+    setTeams((prev) => {
+      const targetTeam = prev[teamKey]
+
+      return {
+        ...prev,
+        [teamKey]: {
+          ...targetTeam,
+          bench: [...targetTeam.bench, number],
+          newPlayer: '',
+          playerMinutes: {
+            ...targetTeam.playerMinutes,
+            [number]: {
+              totalSeconds: 0,
+              currentInAt: null,
+            },
+          },
+        },
+      }
+    })
+  }
+
+  const selectPlayerForTeam = (teamKey, number) => {
+    setActiveTeamKey(teamKey)
+
+    setTeams((prev) => {
+      const targetTeam = prev[teamKey]
+
+      return {
+        ...prev,
+        [teamKey]: {
+          ...targetTeam,
+          selectedPlayer: number,
+          subOutPlayer: number,
+        },
+      }
+    })
+  }
+
+  const handleBenchClickForTeam = (teamKey, number) => {
+    setActiveTeamKey(teamKey)
+
+    setTeams((prev) => {
+      const targetTeam = prev[teamKey]
+
+      if (targetTeam.subOutPlayer) {
+        const outPlayer = targetTeam.subOutPlayer
+
+        const outData = targetTeam.playerMinutes[outPlayer] || {
+          totalSeconds: 0,
+          currentInAt: gameSeconds,
+        }
+
+        const playedSeconds = Math.max(
+          0,
+          outData.currentInAt - gameSeconds
+        )
+
+        return {
+          ...prev,
+          [teamKey]: {
+            ...targetTeam,
+            playerMinutes: {
+              ...targetTeam.playerMinutes,
+              [outPlayer]: {
+                totalSeconds: outData.totalSeconds + playedSeconds,
+                currentInAt: null,
+              },
+              [number]: {
+                totalSeconds:
+                  targetTeam.playerMinutes[number]?.totalSeconds || 0,
+                currentInAt: gameSeconds,
+              },
+            },
+            onCourt: targetTeam.onCourt.map((player) =>
+              player === outPlayer ? number : player
+            ),
+            bench: [
+              ...targetTeam.bench.filter((player) => player !== number),
+              outPlayer,
+            ],
+            selectedPlayer: number,
+            subOutPlayer: null,
+          },
+        }
+      }
+
+      if (targetTeam.onCourt.length >= 5) return prev
+
+      return {
+        ...prev,
+        [teamKey]: {
+          ...targetTeam,
+          playerMinutes: {
+            ...targetTeam.playerMinutes,
+            [number]: {
+              totalSeconds:
+                targetTeam.playerMinutes[number]?.totalSeconds || 0,
+              currentInAt: gameSeconds,
+            },
+          },
+          bench: targetTeam.bench.filter((player) => player !== number),
+          onCourt: [...targetTeam.onCourt, number],
+          selectedPlayer: number,
+        },
+      }
+    })
+  }
+
+  const handlePlayerDropForTeam = (teamKey, benchPlayer) => {
+    setActiveTeamKey(teamKey)
+
+    setTeams((prev) => {
+      const targetTeam = prev[teamKey]
+
+      if (!targetTeam.draggingPlayer) return prev
+
+      const outPlayer = targetTeam.draggingPlayer
+
+      const outData = targetTeam.playerMinutes[outPlayer] || {
+        totalSeconds: 0,
+        currentInAt: gameSeconds,
+      }
+
+      const playedSeconds = Math.max(
+        0,
+        outData.currentInAt - gameSeconds
+      )
+
+      return {
+        ...prev,
+        [teamKey]: {
+          ...targetTeam,
+          playerMinutes: {
+            ...targetTeam.playerMinutes,
+            [outPlayer]: {
+              totalSeconds: outData.totalSeconds + playedSeconds,
+              currentInAt: null,
+            },
+            [benchPlayer]: {
+              totalSeconds:
+                targetTeam.playerMinutes[benchPlayer]?.totalSeconds || 0,
+              currentInAt: gameSeconds,
+            },
+          },
+          onCourt: targetTeam.onCourt.map((player) =>
+            player === outPlayer ? benchPlayer : player
+          ),
+          bench: [
+            ...targetTeam.bench.filter((player) => player !== benchPlayer),
+            outPlayer,
+          ],
+          selectedPlayer: benchPlayer,
+          draggingPlayer: null,
+        },
+      }
+    })
+  }
+
+  const deletePlayerForTeam = (teamKey) => {
+    const team = teams[teamKey]
+    const player = team.newPlayer.trim()
+
+    if (!player) return
+
+    if (team.onCourt.includes(player)) {
+      alert('ON COURTの選手は削除できません')
+      return
+    }
+
+    setTeams((prev) => {
+      const targetTeam = prev[teamKey]
+
+      return {
+        ...prev,
+        [teamKey]: {
+          ...targetTeam,
+          bench: targetTeam.bench.filter((p) => p !== player),
+          selectedPlayer:
+            targetTeam.selectedPlayer === player
+              ? null
+              : targetTeam.selectedPlayer,
+          newPlayer: '',
+        },
+      }
+    })
+  }
+
+  const renderTeamRoster = (teamKey) => {
+    const team = teams[teamKey]
+    const isRecordingTeam = activeTeamKey === teamKey
+
+    return (
+      <div
+        className={
+          isRecordingTeam
+            ? 'roster-card pro-team-roster recording-team'
+            : 'roster-card pro-team-roster'
+        }
+      >
+        <h2>ROSTER</h2>
+
+        <div className="selected-player">
+          {isRecordingTeam && team.selectedPlayer
+            ? `RECORDING #${team.selectedPlayer}`
+            : 'SELECT PLAYER'}
+        </div>
+
+        <div className="roster-section">
+          <h3>ON COURT ({team.onCourt.length}/5)</h3>
+
+          <div className="player-list">
+            {team.onCourt.map((number) => (
+              <button
+                key={`${teamKey}-on-${number}`}
+                className={
+                  team.subOutPlayer === number
+                    ? 'player-chip sub-out'
+                    : isRecordingTeam && team.selectedPlayer === number
+                      ? 'player-chip selected'
+                      : 'player-chip active'
+                }
+                onClick={() => selectPlayerForTeam(teamKey, number)}
+                draggable
+                onDragStart={() =>
+                  updateTeamField(teamKey, 'draggingPlayer', number)
+                }
+                onDragEnd={() =>
+                  updateTeamField(teamKey, 'draggingPlayer', null)
+                }
+              >
+                {number}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="roster-section">
+          <h3>
+            BENCH
+            {team.subOutPlayer && (
+              <span className="sub-hint">
+                {' '}→ SELECT IN PLAYER
+              </span>
+            )}
+          </h3>
+
+          <div className="player-list bench-list">
+            {team.bench.map((number) => (
+              <button
+                key={`${teamKey}-bench-${number}`}
+                className="player-chip"
+                onClick={() => handleBenchClickForTeam(teamKey, number)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => handlePlayerDropForTeam(teamKey, number)}
+              >
+                {number}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="player-form">
+          <input
+            type="number"
+            placeholder="#"
+            value={team.newPlayer}
+            onChange={(e) =>
+              updateTeamField(teamKey, 'newPlayer', e.target.value)
+            }
+          />
+
+          <button onClick={() => addPlayerForTeam(teamKey)}>+</button>
+
+          <button
+            className="delete-btn"
+            onClick={() => deletePlayerForTeam(teamKey)}
+          >
+            −
+          </button>
+        </div>
+      </div>
+    )
+  }
+  const renderTeamSidePanel = (teamKey) => {
+    const team = teams[teamKey]
+
+    return (
+      <>
+        <div className="team-name-card">
+          <input
+            value={team.teamName}
+            onChange={(e) =>
+              updateTeamField(teamKey, 'teamName', e.target.value)
+            }
+            className="team-name-input"
+          />
+        </div>
+
+        <div className="chart-card chart-only">
+          <Court
+            shots={getVisibleShotsForTeam(teamKey)}
+            onCourtClick={(e) => handleCourtClickForTeam(teamKey, e)}
+          />
+        </div>
+
+        {renderTeamRoster(teamKey)}
+      </>
+    )
+  }
+
 
   return (
     <div className="app">
@@ -984,7 +1472,13 @@ function App() {
           />
         </div>
 
-        <div className="clock-area">
+        <div className={isPro ? 'clock-area score-clock-area' : 'clock-area'}>
+          {isPro && (
+            <div className="header-score">
+              {getTeamScore('teamB')}
+            </div>
+          )}
+
           <div className="game-clock">
             <img
               src="/clock-frame.png"
@@ -1001,11 +1495,17 @@ function App() {
             </div>
           </div>
 
-
+          {isPro && (
+            <div className="header-score">
+              {getTeamScore('teamA')}
+            </div>
+          )}
         </div>
 
         <div className="header-right">
-          <div className="plan-badge">FREE</div>
+          <div className="plan-badge">
+            {isPro ? 'PRO' : 'FREE'}
+          </div>
 
           <button
             className="menu-button"
@@ -1025,14 +1525,18 @@ function App() {
       </header>
 
       <main className="three-column-layout">
-        <aside className="left-ad-panel">
-          <div className="ad-box">
-            <AdSenseSidebar />
+        <aside className={isPro ? 'left-ad-panel pro-side-panel' : 'left-ad-panel'}>
+          {isPro ? (
+            renderTeamSidePanel('teamB')
+          ) : (
+            <div className="ad-box">
+              <AdSenseSidebar />
 
-            <div className="ad-text">
-              Upgrade to PlayPulse Pro
+              <div className="ad-text">
+                Upgrade to PlayPulse Pro
+              </div>
             </div>
-          </div>
+          )}
         </aside>
 
         <section className="media-panel">
@@ -1061,7 +1565,16 @@ function App() {
 
               <div className="event-list">
                 {newestLogs.map((log) => (
-                  <div key={log.id} className="event-item">
+                  <div
+                    key={`${log.teamKey || 'free'}-${log.id}`}
+                    className={
+                      log.teamKey === 'teamA'
+                        ? 'event-item team-a-log'
+                        : log.teamKey === 'teamB'
+                          ? 'event-item team-b-log'
+                          : 'event-item'
+                    }
+                  >
                     <span className="event-time">
                       {log.clock || '--:--'}
                     </span>
@@ -1121,114 +1634,119 @@ function App() {
           </div>
         </section>
         <section className="side-panel">
-          <div className="team-name-card">
-            <input
-              value={teamName}
-              onChange={(e) => setTeamName(e.target.value)}
-              className="team-name-input"
-            />
-          </div>
-
-          <div className="chart-card chart-only">
-            <div ref={courtRef}>
-              <Court
-                shots={visibleShots}
-                onCourtClick={handleCourtClick}
-              />
-            </div>
-          </div>
-
-          <div className="roster-card">
-            <h2>ROSTER</h2>
-
-
-            <div className="roster-section">
-              <h3>ON COURT ({onCourt.length}/5)</h3>
-
-              <div className="player-list">
-                {onCourt.map((number) => (
-                  <button
-                    key={number}
-                    className={
-                      subOutPlayer === number
-                        ? 'player-chip sub-out'
-                        : selectedPlayer === number
-                          ? 'player-chip selected'
-                          : 'player-chip active'
-                    }
-                    onClick={() => selectOnCourtPlayer(number)}
-                    draggable
-                    onDragStart={() => setDraggingPlayer(number)}
-                    onDragEnd={() => setDraggingPlayer(null)}
-                  >
-                    {number}
-                  </button>
-                ))}
+          {isPro ? (
+            renderTeamSidePanel('teamA')
+          ) : (
+            <>
+              <div className="team-name-card">
+                <input
+                  value={teamName}
+                  onChange={(e) => setTeamName(e.target.value)}
+                  className="team-name-input"
+                />
               </div>
-            </div>
 
-            <div className="roster-section">
-              <h3>
-                BENCH
-                {subOutPlayer && (
-                  <span className="sub-hint">
-                    {' '}→ SELECT IN PLAYER
-                  </span>
-                )}
-              </h3>
-
-              <div className="player-list bench-list">
-                {bench.map((number) => (
-                  <button
-                    key={number}
-                    className="player-chip"
-                    onClick={() => handleBenchClick(number)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={() => handlePlayerDrop(number)}
-                  >
-                    {number}
-                  </button>
-                ))}
+              <div className="chart-card chart-only">
+                <div ref={courtRef}>
+                  <Court
+                    shots={visibleShots}
+                    onCourtClick={handleCourtClick}
+                  />
+                </div>
               </div>
-            </div>
 
-            <div className="player-form">
-              <input
-                type="number"
-                placeholder="#"
-                value={newPlayer}
-                onChange={(e) => setNewPlayer(e.target.value)}
-              />
+              <div className="roster-card">
+                <h2>ROSTER</h2>
 
-              <button onClick={addPlayer}>+</button>
+                <div className="roster-section">
+                  <h3>ON COURT ({onCourt.length}/5)</h3>
 
-              <button
-                className="delete-btn"
-                onClick={() => {
-                  const player = newPlayer.trim()
+                  <div className="player-list">
+                    {onCourt.map((number) => (
+                      <button
+                        key={number}
+                        className={
+                          subOutPlayer === number
+                            ? 'player-chip sub-out'
+                            : selectedPlayer === number
+                              ? 'player-chip selected'
+                              : 'player-chip active'
+                        }
+                        onClick={() => selectOnCourtPlayer(number)}
+                        draggable
+                        onDragStart={() => setDraggingPlayer(number)}
+                        onDragEnd={() => setDraggingPlayer(null)}
+                      >
+                        {number}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                  if (!player) return
+                <div className="roster-section">
+                  <h3>
+                    BENCH
+                    {subOutPlayer && (
+                      <span className="sub-hint">
+                        {' '}→ SELECT IN PLAYER
+                      </span>
+                    )}
+                  </h3>
 
-                  if (onCourt.includes(player)) {
-                    alert('ON COURTの選手は削除できません')
-                    return
-                  }
+                  <div className="player-list bench-list">
+                    {bench.map((number) => (
+                      <button
+                        key={number}
+                        className="player-chip"
+                        onClick={() => handleBenchClick(number)}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={() => handlePlayerDrop(number)}
+                      >
+                        {number}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                  setBench((prev) =>
-                    prev.filter((p) => p !== player)
-                  )
+                <div className="player-form">
+                  <input
+                    type="number"
+                    placeholder="#"
+                    value={newPlayer}
+                    onChange={(e) => setNewPlayer(e.target.value)}
+                  />
 
-                  if (selectedPlayer === player) {
-                    setSelectedPlayer(null)
-                  }
+                  <button onClick={addPlayer}>+</button>
 
-                  setNewPlayer('')
-                }}
-              >
-                −
-              </button>
-            </div>
-          </div>
+                  <button
+                    className="delete-btn"
+                    onClick={() => {
+                      const player = newPlayer.trim()
+
+                      if (!player) return
+
+                      if (onCourt.includes(player)) {
+                        alert('ON COURTの選手は削除できません')
+                        return
+                      }
+
+                      setBench((prev) =>
+                        prev.filter((p) => p !== player)
+                      )
+
+                      if (selectedPlayer === player) {
+                        setSelectedPlayer(null)
+                      }
+
+                      setNewPlayer('')
+                    }}
+                  >
+                    −
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </section>
       </main>
 
