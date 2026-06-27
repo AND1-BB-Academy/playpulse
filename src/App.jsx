@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import { useUserPlan } from './hooks/useUserPlan'
 import Court from './components/Court'
 import './App.css'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+
 
 import { auth, db } from './firebase'
 import {
@@ -59,6 +61,8 @@ function AdSenseSidebar() {
 
 
 function App() {
+  const { user: planUser, isPro: firestoreIsPro, loading: planLoading } = useUserPlan()
+
   const [authUser, setAuthUser] = useState(null)
   const [userPlan, setUserPlan] = useState('free')
   const [authLoading, setAuthLoading] = useState(true)
@@ -67,7 +71,7 @@ function App() {
   const [authMode, setAuthMode] = useState('login')
   const [showAuthPanel, setShowAuthPanel] = useState(false)
 
-  const isPro = userPlan === 'pro'
+  const isPro = firestoreIsPro
 
   const [activeTeamKey, setActiveTeamKey] = useState('teamA')
   const [teams, setTeams] = useState({
@@ -224,6 +228,39 @@ function App() {
     } catch (error) {
       console.error(error)
       alert('ログアウトできませんでした。')
+    }
+  }
+
+  const handleCheckout = async () => {
+    if (!authUser) {
+      setShowAuthPanel(true)
+      return
+    }
+
+    try {
+      const response = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          uid: authUser.uid,
+          email: authUser.email,
+        }),
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || !data?.url) {
+        throw new Error(
+          data?.error || `Checkout session failed: ${response.status}`
+        )
+      }
+
+      window.location.href = data.url
+    } catch (error) {
+      console.error(error)
+      alert(`購入ページを開けませんでした。\n\n${error.message}`)
     }
   }
 
@@ -2632,9 +2669,17 @@ function App() {
           <p>現在のプラン：FREE</p>
 
           <p className="auth-note">
-            Pro機能を使用するには購入が必要です。
-            次の工程でStripe決済ボタンを追加します。
+            PlayPulse Proは月額1,100円（税込）でご利用いただけます。
+            解約後も、すでにお支払い済みの期間が終了するまではPro機能をご利用いただけます。
           </p>
+
+          <button
+            type="button"
+            className="auth-google-button"
+            onClick={handleCheckout}
+          >
+            月額1,100円で購入する
+          </button>
 
           <button
             type="button"
@@ -2660,6 +2705,23 @@ function App() {
 
   return (
     <div className="app">
+      <div
+        style={{
+          position: 'fixed',
+          top: 8,
+          right: 8,
+          zIndex: 9999,
+          padding: '6px 10px',
+          borderRadius: 8,
+          background: '#071A3A',
+          color: '#fff',
+          fontSize: 12,
+          fontWeight: 700,
+        }}
+      >
+        PLAN: {planLoading ? 'LOADING' : isPro ? 'PRO' : 'PROプランへ'}
+      </div>
+
       <header className="top-bar">
         <div className="brand-area">
           <img
@@ -2735,7 +2797,7 @@ function App() {
             renderTeamSidePanel('teamB')
           ) : (
             <div className="ad-box">
-              <AdSenseSidebar />
+              {!isPro && <AdSenseSidebar />}
 
               <div className="ad-text">
                 Upgrade to PlayPulse Pro
