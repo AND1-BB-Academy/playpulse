@@ -555,6 +555,70 @@ body {
   );
 }
 
+.event-log-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.event-item {
+  width: 100%;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.event-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 12px rgba(7, 26, 58, 0.08);
+}
+
+.memo-badge {
+  margin-left: 8px;
+  padding: 2px 6px;
+
+  border-radius: 999px;
+
+  background: rgba(201, 145, 45, 0.14);
+  color: #c8912d;
+
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.log-memo-editor {
+  padding: 0 8px 4px 12px;
+}
+
+.log-memo-editor textarea {
+  width: 100%;
+  min-height: 54px;
+
+  box-sizing: border-box;
+
+  border: 1px solid rgba(201, 145, 45, 0.28);
+  border-radius: 12px;
+
+  padding: 8px 10px;
+
+  background: #ffffff;
+  color: #071a3a;
+
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+
+  outline: none;
+  resize: vertical;
+}
+
+.log-memo-editor textarea:focus {
+  border-color: #c8912d;
+  box-shadow: 0 0 0 3px rgba(201, 145, 45, 0.14);
+}
+
 .event-item.team-b-log {
   border-left: 5px solid #071a3a;
   background: linear-gradient(

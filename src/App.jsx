@@ -57,6 +57,7 @@ function App() {
   const [isTimerRunning, setIsTimerRunning] = useState(false)
   const courtRef = useRef(null)
   const [showMenu, setShowMenu] = useState(false)
+  const [editingLogKey, setEditingLogKey] = useState(null)
   const currentTeamKey = isPro ? activeTeamKey : 'teamA'
 
   const activeTeam = teams[currentTeamKey]
@@ -146,8 +147,8 @@ function App() {
     return `${min}:${String(sec).padStart(2, '0')}`
   }
 
-  const getPlayerTotalSeconds = (number) => {
-    const data = playerMinutes[number]
+  const getPlayerTotalSecondsForTeam = (teamKey, number) => {
+    const data = teams[teamKey].playerMinutes[number]
 
     if (!data) return 0
 
@@ -156,6 +157,10 @@ function App() {
     }
 
     return data.totalSeconds
+  }
+
+  const getPlayerTotalSeconds = (number) => {
+    return getPlayerTotalSecondsForTeam(currentTeamKey, number)
   }
 
   const getTeamScore = (teamKey) => {
@@ -170,7 +175,7 @@ function App() {
     }, 0)
   }
 
-  const drawShotChartOnPdf = (doc, playerNumber, x, y) => {
+  const drawShotChartOnPdf = (doc, playerNumber, x, y, shotSource = shots) => {
     const chartW = 150
     const chartH = 108
 
@@ -182,7 +187,7 @@ function App() {
 
     doc.addImage('/pdf-court.png', 'PNG', x, y, chartW, chartH)
 
-    const playerShots = shots.filter(
+    const playerShots = shotSource.filter(
       (shot) =>
         shot.player === playerNumber &&
         shot.shotType !== 'FT' &&
@@ -644,8 +649,507 @@ function App() {
       ftPercent: percent(ftM, ftA),
     }
   }
+
+  const getPdfShotText = (shot) => {
+    if (shot.result === 'make') return `${shot.shotType} MADE`
+    if (shot.result === 'miss') return `${shot.shotType} MISS`
+    return `${shot.shotType} PENDING`
+  }
+
+  const buildPdfLogNoteRows = () => {
+    const targetTeamKeys = isPro ? ['teamB', 'teamA'] : [currentTeamKey]
+
+    return targetTeamKeys
+      .flatMap((teamKey) => {
+        const team = teams[teamKey]
+        const teamLabel = getPdfTeamName(teamKey)
+
+        return [
+          ...team.shots.map((shot) => ({
+            id: shot.id,
+            teamKey,
+            teamLabel,
+            quarter: shot.quarter,
+            clock: shot.clock,
+            player: shot.player,
+            action: getPdfShotText(shot),
+            note: shot.note || '',
+          })),
+
+          ...team.events.map((event) => ({
+            id: event.id,
+            teamKey,
+            teamLabel,
+            quarter: event.quarter,
+            clock: event.clock,
+            player: event.player,
+            action: event.eventType,
+            note: event.note || '',
+          })),
+        ]
+      })
+      .filter((row) => row.note.trim() !== '')
+      .sort((a, b) => a.id - b.id)
+  }
+
+  const wrapPdfMemoText = (text, maxWidth, fontSize = 7) => {
+    const scale = 4
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+
+    ctx.font = `${fontSize * scale}px sans-serif`
+
+    const maxPx = maxWidth * scale
+    const lines = []
+
+    const paragraphs = String(text || '').replace(/\r/g, '').split('\n')
+
+    paragraphs.forEach((paragraph) => {
+      let line = ''
+
+      Array.from(paragraph).forEach((char) => {
+        const testLine = line + char
+
+        if (ctx.measureText(testLine).width > maxPx && line) {
+          lines.push(line)
+          line = char
+        } else {
+          line = testLine
+        }
+      })
+
+      if (line) {
+        lines.push(line)
+      }
+    })
+
+    return lines.length > 0 ? lines : ['']
+  }
+
+  const drawWrappedPdfTextAsImage = (
+    pdf,
+    text,
+    x,
+    y,
+    maxWidth,
+    fontSize = 7,
+    preparedLines = null
+  ) => {
+    const scale = 4
+    const padding = 1.5
+    const lineHeight = fontSize * 1.35
+    const lines = preparedLines || wrapPdfMemoText(text, maxWidth, fontSize)
+
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+
+    canvas.width = (maxWidth + padding * 2) * scale
+    canvas.height = (lines.length * lineHeight + padding * 2) * scale
+
+    ctx.font = `${fontSize * scale}px sans-serif`
+    ctx.fillStyle = '#071a3a'
+    ctx.textBaseline = 'top'
+
+    lines.forEach((line, index) => {
+      ctx.fillText(
+        line,
+        padding * scale,
+        (padding + index * lineHeight) * scale
+      )
+    })
+
+    pdf.addImage(
+      canvas.toDataURL('image/png'),
+      'PNG',
+      x,
+      y,
+      canvas.width / scale,
+      canvas.height / scale
+    )
+  }
+
+  const addLogNotesToPdf = (pdf) => {
+    const rows = buildPdfLogNoteRows()
+
+    if (rows.length === 0) return
+
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+
+    const marginX = 14
+    const rowWidth = pageWidth - marginX * 2
+    const noteX = marginX + 7
+    const noteWidth = rowWidth - 14
+
+    const drawPageHeader = () => {
+      pdf.setTextColor(7, 26, 58)
+      pdf.setFontSize(16)
+      pdf.text('Play Log & Notes', marginX, 18)
+
+      pdf.setFontSize(9)
+      pdf.setTextColor(110, 110, 110)
+      pdf.text('Only logs with notes are shown.', marginX, 25)
+
+      return 34
+    }
+
+    pdf.addPage()
+
+    let y = drawPageHeader()
+
+    rows.forEach((row) => {
+      const qLabel =
+        row.quarter <= 4 ? `Q${row.quarter}` : `OT${row.quarter - 4}`
+
+      const noteLines = wrapPdfMemoText(row.note, noteWidth, 7)
+      const rowHeight = Math.max(24, 15 + noteLines.length * 6)
+
+      if (y + rowHeight > pageHeight - 14) {
+        pdf.addPage()
+        y = drawPageHeader()
+      }
+
+      pdf.setFillColor(255, 255, 255)
+      pdf.setDrawColor(225, 225, 225)
+      pdf.roundedRect(marginX, y, rowWidth, rowHeight, 3, 3, 'FD')
+
+      if (row.teamKey === 'teamA') {
+        pdf.setDrawColor(201, 145, 45)
+      } else {
+        pdf.setDrawColor(7, 26, 58)
+      }
+
+      pdf.setLineWidth(1.4)
+      pdf.line(marginX + 2.5, y + 3, marginX + 2.5, y + rowHeight - 3)
+
+      pdf.setTextColor(7, 26, 58)
+      pdf.setFontSize(8)
+
+      pdf.text(
+        `${qLabel} ${row.clock || '--:--'}${row.teamLabel ? `  ${row.teamLabel}` : ''}  #${row.player}  ${row.action}`,
+        noteX,
+        y + 7
+      )
+
+      drawWrappedPdfTextAsImage(
+        pdf,
+        row.note,
+        noteX,
+        y + 10,
+        noteWidth,
+        7,
+        noteLines
+      )
+
+      y += rowHeight + 4
+    })
+  }
+
+  const getPdfTeamName = (teamKey) => {
+    const name = (teams[teamKey].teamName || '').trim()
+
+    if (name === 'HOME' || name === 'AWAY') {
+      return ''
+    }
+
+    return name
+  }
+
+  const getPdfPercent = (madeCount, attemptCount) => {
+    if (attemptCount === 0) return '-'
+    return `${Math.round((madeCount / attemptCount) * 100)}%`
+  }
+
+  const getPdfMadeCount = (shotList) => {
+    return shotList.filter((shot) => shot.result === 'make').length
+  }
+
+  const buildPdfPlayerStatRow = (teamKey, player) => {
+    const team = teams[teamKey]
+
+    const playerShots = team.shots.filter(
+      (shot) =>
+        shot.player === player &&
+        shot.result !== 'pending'
+    )
+
+    const fgShots = playerShots.filter(
+      (shot) => shot.shotType !== 'FT'
+    )
+
+    const twoPtShots = playerShots.filter(
+      (shot) => shot.shotType === '2PT'
+    )
+
+    const threePtShots = playerShots.filter(
+      (shot) => shot.shotType === '3PT'
+    )
+
+    const ftShots = playerShots.filter(
+      (shot) => shot.shotType === 'FT'
+    )
+
+    const fgM = getPdfMadeCount(fgShots)
+    const twoM = getPdfMadeCount(twoPtShots)
+    const threeM = getPdfMadeCount(threePtShots)
+    const ftM = getPdfMadeCount(ftShots)
+
+    const points = twoM * 2 + threeM * 3 + ftM
+
+    const playerEvents = team.events.filter(
+      (event) => event.player === player
+    )
+
+    const countEvent = (eventType) =>
+      playerEvents.filter(
+        (event) => event.eventType === eventType
+      ).length
+
+    const orb = countEvent('ORB')
+    const drb = countEvent('DRB')
+
+    return [
+      `#${player}`,
+      formatMinutes(getPlayerTotalSecondsForTeam(teamKey, player)),
+      points,
+      `${fgM}/${fgShots.length}`,
+      getPdfPercent(fgM, fgShots.length),
+      `${twoM}/${twoPtShots.length}`,
+      getPdfPercent(twoM, twoPtShots.length),
+      `${threeM}/${threePtShots.length}`,
+      getPdfPercent(threeM, threePtShots.length),
+      `${ftM}/${ftShots.length}`,
+      getPdfPercent(ftM, ftShots.length),
+      orb,
+      drb,
+      orb + drb,
+      countEvent('AST'),
+      countEvent('STL'),
+      countEvent('BLK'),
+      countEvent('TOV'),
+      countEvent('PF'),
+    ]
+  }
+
+  const buildPdfPlayerRows = (teamKey) => {
+    const team = teams[teamKey]
+    const players = [...team.onCourt, ...team.bench]
+
+    return [...players]
+      .sort((a, b) => Number(a) - Number(b))
+      .map((player) => buildPdfPlayerStatRow(teamKey, player))
+  }
+
+  const buildPdfTeamTotalRow = (teamKey) => {
+    const team = teams[teamKey]
+
+    const completedShots = team.shots.filter(
+      (shot) => shot.result !== 'pending'
+    )
+
+    const fgShots = completedShots.filter(
+      (shot) => shot.shotType !== 'FT'
+    )
+
+    const twoPtShots = completedShots.filter(
+      (shot) => shot.shotType === '2PT'
+    )
+
+    const threePtShots = completedShots.filter(
+      (shot) => shot.shotType === '3PT'
+    )
+
+    const ftShots = completedShots.filter(
+      (shot) => shot.shotType === 'FT'
+    )
+
+    const fgM = getPdfMadeCount(fgShots)
+    const twoM = getPdfMadeCount(twoPtShots)
+    const threeM = getPdfMadeCount(threePtShots)
+    const ftM = getPdfMadeCount(ftShots)
+
+    const countTeamEvent = (eventType) =>
+      team.events.filter((event) => event.eventType === eventType).length
+
+    const orb = countTeamEvent('ORB')
+    const drb = countTeamEvent('DRB')
+
+    return [
+      getPdfTeamName(teamKey),
+      twoM * 2 + threeM * 3 + ftM,
+      `${fgM}/${fgShots.length}`,
+      getPdfPercent(fgM, fgShots.length),
+      `${twoM}/${twoPtShots.length}`,
+      getPdfPercent(twoM, twoPtShots.length),
+      `${threeM}/${threePtShots.length}`,
+      getPdfPercent(threeM, threePtShots.length),
+      `${ftM}/${ftShots.length}`,
+      getPdfPercent(ftM, ftShots.length),
+      orb,
+      drb,
+      orb + drb,
+      countTeamEvent('AST'),
+      countTeamEvent('STL'),
+      countTeamEvent('BLK'),
+      countTeamEvent('TOV'),
+      countTeamEvent('PF'),
+    ]
+  }
+
+  const exportProPdf = () => {
+    const pdf = new jsPDF('l', 'mm', 'a4')
+    const teamKeys = ['teamB', 'teamA']
+    const pageHeight = pdf.internal.pageSize.getHeight()
+
+    pdf.setFontSize(18)
+    pdf.setTextColor(7, 26, 58)
+    pdf.text('PlayPulse Pro Game Report', 14, 18)
+
+    const matchupText = [
+      getPdfTeamName('teamB'),
+      getPdfTeamName('teamA'),
+    ].filter(Boolean).join(' vs ')
+
+    if (matchupText) {
+      drawTextAsImage(
+        pdf,
+        matchupText,
+        14,
+        22,
+        8
+      )
+    }
+
+    let y = matchupText ? 50 : 34
+
+    pdf.setFontSize(14)
+    pdf.setTextColor(7, 26, 58)
+    pdf.text('Team Total', 14, y)
+
+    autoTable(pdf, {
+      startY: y + 6,
+      head: [[
+        'Team', 'PTS', 'FG', 'FG%', '2PT', '2PT%', '3PT', '3PT%', 'FT', 'FT%',
+        'OREB', 'DREB', 'REB', 'AST', 'STL', 'BLK', 'TOV', 'PF'
+      ]],
+      body: teamKeys.map((teamKey) => buildPdfTeamTotalRow(teamKey)),
+      theme: 'grid',
+      styles: {
+        fontSize: 7,
+        cellPadding: 1.6,
+      },
+      headStyles: {
+        fillColor: [7, 26, 58],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+      },
+      bodyStyles: {
+        textColor: [70, 70, 70],
+      },
+      alternateRowStyles: {
+        fillColor: [245, 245, 245],
+      },
+    })
+
+    y = pdf.lastAutoTable.finalY + 14
+
+    teamKeys.forEach((teamKey, index) => {
+      if (index > 0 && y > pageHeight - 80) {
+        pdf.addPage()
+        y = 18
+      }
+
+      const pdfTeamName = getPdfTeamName(teamKey)
+
+      pdf.setFontSize(14)
+      pdf.setTextColor(7, 26, 58)
+      pdf.text('Player Stats', 14, y)
+
+      if (pdfTeamName) {
+        drawTextAsImage(pdf, pdfTeamName, 14, y + 5, 5)
+      }
+
+      const playerRows = buildPdfPlayerRows(teamKey)
+
+      autoTable(pdf, {
+        startY: pdfTeamName ? y + 15 : y + 8,
+        head: [[
+          'Player', 'MIN', 'PTS', 'FG', 'FG%', '2PT', '2PT%', '3PT', '3PT%', 'FT', 'FT%',
+          'OREB', 'DREB', 'REB', 'AST', 'STL', 'BLK', 'TOV', 'PF'
+        ]],
+        body: playerRows.length > 0 ? playerRows : [[
+          '-', '-', 0, '0/0', '-', '0/0', '-', '0/0', '-', '0/0', '-',
+          0, 0, 0, 0, 0, 0, 0, 0
+        ]],
+        theme: 'grid',
+        styles: {
+          fontSize: 6.5,
+          cellPadding: 1.4,
+        },
+        headStyles: {
+          fillColor: [7, 26, 58],
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+        },
+        bodyStyles: {
+          textColor: [70, 70, 70],
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245],
+        },
+      })
+
+      y = pdf.lastAutoTable.finalY + 14
+    })
+
+    teamKeys.forEach((teamKey) => {
+      const team = teams[teamKey]
+      const players = [...team.onCourt, ...team.bench]
+
+      const playersWithShots = [...players]
+        .filter((player) =>
+          team.shots.some(
+            (shot) =>
+              shot.player === player &&
+              shot.shotType !== 'FT' &&
+              shot.result !== 'pending'
+          )
+        )
+        .sort((a, b) => Number(a) - Number(b))
+
+      playersWithShots.forEach((player) => {
+        pdf.addPage()
+
+        const chartX = 14
+        const titleY = 18
+        const teamNameY = 22
+        const chartY = 34
+        const pdfTeamName = getPdfTeamName(teamKey)
+
+        pdf.setTextColor(7, 26, 58)
+        pdf.setFontSize(12)
+        pdf.text(`#${player} Shot Chart`, chartX, titleY)
+
+        if (pdfTeamName) {
+          drawTextAsImage(pdf, pdfTeamName, chartX, teamNameY, 4)
+        }
+
+        drawShotChartOnPdf(pdf, player, chartX, chartY, team.shots)
+      })
+    })
+
+    addLogNotesToPdf(pdf)
+
+    pdf.save('playpulse-pro-report.pdf')
+  }
+
   const exportPdf = () => {
     console.log('PDF button clicked')
+
+    if (isPro) {
+      exportProPdf()
+      return
+    }
 
     const pdf = new jsPDF('l', 'mm', 'a4')
 
@@ -893,25 +1397,36 @@ function App() {
       drawShotChartOnPdf(pdf, player, chartX, chartY)
     })
 
+    addLogNotesToPdf(pdf)
 
     pdf.save('playpulse-report.pdf')
   }
 
   const drawTextAsImage = (pdf, text, x, y, fontSize = 18) => {
+    const safeText = String(text || '').trim()
+
+    if (!safeText) return
+
+    const scale = 4
+    const fontPx = fontSize * scale
+    const paddingX = fontPx * 0.6
+    const paddingY = fontPx * 0.35
+    const lineHeight = fontPx * 1.45
+
     const canvas = document.createElement('canvas')
     const ctx = canvas.getContext('2d')
 
-    ctx.font = `bold ${fontSize * 4}px sans-serif`
+    ctx.font = `bold ${fontPx}px sans-serif`
 
-    const textWidth = ctx.measureText(text).width
+    const textWidth = ctx.measureText(safeText).width
 
-    canvas.width = textWidth + 40
-    canvas.height = fontSize * 5
+    canvas.width = Math.ceil(textWidth + paddingX * 2)
+    canvas.height = Math.ceil(lineHeight + paddingY * 2)
 
-    ctx.font = `bold ${fontSize * 4}px sans-serif`
+    ctx.font = `bold ${fontPx}px sans-serif`
     ctx.fillStyle = '#071a3a'
     ctx.textBaseline = 'top'
-    ctx.fillText(text, 20, 10)
+    ctx.fillText(safeText, paddingX, paddingY)
 
     const imgData = canvas.toDataURL('image/png')
 
@@ -920,8 +1435,8 @@ function App() {
       'PNG',
       x,
       y,
-      canvas.width / 4,
-      canvas.height / 4
+      canvas.width / scale,
+      canvas.height / scale
     )
   }
 
@@ -1070,7 +1585,10 @@ function App() {
     return [
       ...team.shots.map((shot) => ({
         id: shot.id,
+        logKey: `${teamKey}-shot-${shot.id}`,
+        logType: 'shot',
         teamKey,
+        targetTeamKey: teamKey,
         player: shot.player,
         text: `${shot.shotType} ${shot.result === 'make'
           ? 'MADE'
@@ -1079,14 +1597,19 @@ function App() {
             : 'PENDING'
           }`,
         clock: shot.clock,
+        note: shot.note || '',
       })),
 
       ...team.events.map((event) => ({
         id: event.id,
+        logKey: `${teamKey}-event-${event.id}`,
+        logType: 'event',
         teamKey,
+        targetTeamKey: teamKey,
         player: event.player,
         text: event.eventType,
         clock: event.clock,
+        note: event.note || '',
       })),
     ]
   }
@@ -1099,6 +1622,10 @@ function App() {
     : [
       ...shots.map((shot) => ({
         id: shot.id,
+        logKey: `free-shot-${shot.id}`,
+        logType: 'shot',
+        teamKey: null,
+        targetTeamKey: currentTeamKey,
         player: shot.player,
         text: `${shot.shotType} ${shot.result === 'make'
           ? 'MADE'
@@ -1107,15 +1634,37 @@ function App() {
             : 'PENDING'
           }`,
         clock: shot.clock,
+        note: shot.note || '',
       })),
 
       ...events.map((event) => ({
         id: event.id,
+        logKey: `free-event-${event.id}`,
+        logType: 'event',
+        teamKey: null,
+        targetTeamKey: currentTeamKey,
         player: event.player,
         text: event.eventType,
         clock: event.clock,
+        note: event.note || '',
       })),
     ].sort((a, b) => b.id - a.id)
+
+  const updateLogNote = (log, note) => {
+    const targetTeamKey = log.targetTeamKey || currentTeamKey
+    const targetField = log.logType === 'shot' ? 'shots' : 'events'
+
+    updateTeamField(targetTeamKey, targetField, (prevItems) =>
+      prevItems.map((item) =>
+        item.id === log.id
+          ? {
+            ...item,
+            note,
+          }
+          : item
+      )
+    )
+  }
 
   const visibleShots = selectedPlayer
     ? shots.filter(
@@ -1565,27 +2114,49 @@ function App() {
 
               <div className="event-list">
                 {newestLogs.map((log) => (
-                  <div
-                    key={`${log.teamKey || 'free'}-${log.id}`}
-                    className={
-                      log.teamKey === 'teamA'
-                        ? 'event-item team-a-log'
-                        : log.teamKey === 'teamB'
-                          ? 'event-item team-b-log'
-                          : 'event-item'
-                    }
-                  >
-                    <span className="event-time">
-                      {log.clock || '--:--'}
-                    </span>
+                  <div key={log.logKey} className="event-log-row">
+                    <button
+                      type="button"
+                      className={
+                        log.teamKey === 'teamA'
+                          ? 'event-item team-a-log'
+                          : log.teamKey === 'teamB'
+                            ? 'event-item team-b-log'
+                            : 'event-item'
+                      }
+                      onClick={() =>
+                        setEditingLogKey((prev) =>
+                          prev === log.logKey ? null : log.logKey
+                        )
+                      }
+                    >
+                      <span className="event-time">
+                        {log.clock || '--:--'}
+                      </span>
 
-                    <span className="event-player">
-                      #{log.player}
-                    </span>
+                      <span className="event-player">
+                        #{log.player}
+                      </span>
 
-                    <span className="event-text">
-                      {log.text}
-                    </span>
+                      <span className="event-text">
+                        {log.text}
+                        {log.note && (
+                          <span className="memo-badge">
+                            MEMO
+                          </span>
+                        )}
+                      </span>
+                    </button>
+
+                    {editingLogKey === log.logKey && (
+                      <div className="log-memo-editor">
+                        <textarea
+                          value={log.note}
+                          placeholder="このプレーのメモを入力"
+                          onChange={(e) => updateLogNote(log, e.target.value)}
+                        />
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
