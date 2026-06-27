@@ -4,6 +4,22 @@ import './App.css'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
+import { auth, db } from './firebase'
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signOut,
+} from 'firebase/auth'
+import {
+  doc as firestoreDoc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
+} from 'firebase/firestore'
+
 const GAME_STORAGE_KEY = 'playpulse-pro-game-data-v1'
 
 const createInitialTeamState = (teamName) => ({
@@ -43,7 +59,15 @@ function AdSenseSidebar() {
 
 
 function App() {
-  const isPro = true
+  const [authUser, setAuthUser] = useState(null)
+  const [userPlan, setUserPlan] = useState('free')
+  const [authLoading, setAuthLoading] = useState(true)
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authMode, setAuthMode] = useState('login')
+  const [showAuthPanel, setShowAuthPanel] = useState(false)
+
+  const isPro = userPlan === 'pro'
 
   const [activeTeamKey, setActiveTeamKey] = useState('teamA')
   const [teams, setTeams] = useState({
@@ -83,6 +107,125 @@ function App() {
     playerMinutes,
     draggingPlayer,
   } = activeTeam
+
+  const googleProvider = new GoogleAuthProvider()
+
+  const createOrLoadUserProfile = async (firebaseUser) => {
+    const userRef = firestoreDoc(db, 'users', firebaseUser.uid)
+    const userSnap = await getDoc(userRef)
+
+    if (!userSnap.exists()) {
+      await setDoc(userRef, {
+        email: firebaseUser.email || '',
+        plan: 'free',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+
+      return 'free'
+    }
+
+    return userSnap.data()?.plan || 'free'
+  }
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        setAuthUser(null)
+        setUserPlan('free')
+        setAuthLoading(false)
+        return
+      }
+
+      setAuthUser(firebaseUser)
+
+      try {
+        const plan = await createOrLoadUserProfile(firebaseUser)
+        setUserPlan(plan)
+      } catch (error) {
+        console.error('User profile load failed:', error)
+
+        setUserPlan('free')
+
+        alert(
+          `ログインは成功しましたが、ユーザー情報の取得に失敗しました。\n\nエラーコード：${error.code || 'unknown'}`
+        )
+      } finally {
+        setAuthLoading(false)
+      }
+    })
+
+    return () => unsubscribe()
+  }, [])
+
+  const handleEmailAuth = async (event) => {
+    event.preventDefault()
+
+    if (!authEmail || !authPassword) {
+      alert('メールアドレスとパスワードを入力してください。')
+      return
+    }
+
+    try {
+      if (authMode === 'signup') {
+        await createUserWithEmailAndPassword(auth, authEmail, authPassword)
+      } else {
+        await signInWithEmailAndPassword(auth, authEmail, authPassword)
+      }
+    } catch (error) {
+      console.error('Email auth failed:', error)
+
+      let message = 'ログインまたは新規登録に失敗しました。'
+
+      if (error.code === 'auth/email-already-in-use') {
+        message = 'このメールアドレスはすでに登録されています。「ログインはこちら」からログインしてください。'
+      }
+
+      if (error.code === 'auth/weak-password') {
+        message = 'パスワードは6文字以上にしてください。'
+      }
+
+      if (error.code === 'auth/invalid-email') {
+        message = 'メールアドレスの形式が正しくありません。'
+      }
+
+      if (
+        error.code === 'auth/invalid-credential' ||
+        error.code === 'auth/wrong-password' ||
+        error.code === 'auth/user-not-found'
+      ) {
+        message = 'メールアドレスまたはパスワードが違います。新規登録済みか確認してください。'
+      }
+
+      if (error.code === 'auth/operation-not-allowed') {
+        message = 'Firebaseでメール/パスワードログインが有効になっていません。'
+      }
+
+      if (error.code === 'auth/configuration-not-found') {
+        message = 'Firebase Authenticationの設定が完了していない可能性があります。'
+      }
+
+      alert(`${message}\n\nエラーコード：${error.code || 'unknown'}`)
+    }
+  }
+
+  const handleGoogleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider)
+    } catch (error) {
+      console.error(error)
+      alert('Googleログインに失敗しました。')
+    }
+  }
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth)
+    } catch (error) {
+      console.error(error)
+      alert('ログアウトできませんでした。')
+    }
+  }
 
 
   const hasGameDataToSave = (targetTeams) => {
@@ -2410,6 +2553,110 @@ function App() {
     )
   }
 
+  if (authLoading) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card">
+          <h1>PlayPulse</h1>
+          <p>読み込み中...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (showAuthPanel && !authUser) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card">
+          <h1>PlayPulse</h1>
+          <p>ログインしてPlayPulse Proを使用します。</p>
+
+          <form onSubmit={handleEmailAuth} className="auth-form">
+            <input
+              type="email"
+              value={authEmail}
+              onChange={(event) => setAuthEmail(event.target.value)}
+              placeholder="メールアドレス"
+            />
+
+            <input
+              type="password"
+              value={authPassword}
+              onChange={(event) => setAuthPassword(event.target.value)}
+              placeholder="パスワード"
+            />
+
+            <button type="submit">
+              {authMode === 'signup' ? '新規登録' : 'ログイン'}
+            </button>
+          </form>
+
+          <button
+            type="button"
+            className="auth-google-button"
+            onClick={handleGoogleLogin}
+          >
+            Googleでログイン
+          </button>
+
+          <button
+            type="button"
+            className="auth-switch-button"
+            onClick={() =>
+              setAuthMode((prev) => (prev === 'login' ? 'signup' : 'login'))
+            }
+          >
+            {authMode === 'signup'
+              ? 'ログインはこちら'
+              : '新規登録はこちら'}
+          </button>
+
+          <button
+            type="button"
+            className="auth-switch-button"
+            onClick={() => setShowAuthPanel(false)}
+          >
+            無料版に戻る
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (showAuthPanel && authUser && !isPro) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card">
+          <h1>PlayPulse Pro</h1>
+          <p>ログイン中：{authUser.email}</p>
+          <p>現在のプラン：FREE</p>
+
+          <p className="auth-note">
+            Pro機能を使用するには購入が必要です。
+            次の工程でStripe決済ボタンを追加します。
+          </p>
+
+          <button
+            type="button"
+            className="auth-google-button"
+            onClick={handleLogout}
+          >
+            ログアウト
+          </button>
+
+          <button
+            type="button"
+            className="auth-switch-button"
+            onClick={() => setShowAuthPanel(false)}
+          >
+            無料版に戻る
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+
 
   return (
     <div className="app">
@@ -2453,9 +2700,17 @@ function App() {
         </div>
 
         <div className="header-right">
-          <div className="plan-badge">
-            {isPro ? 'PRO' : 'FREE'}
-          </div>
+          <button
+            type="button"
+            className="pro-badge"
+            onClick={() => {
+              if (!isPro) {
+                setShowAuthPanel(true)
+              }
+            }}
+          >
+            {isPro ? 'PRO' : 'PROプランへ'}
+          </button>
 
           <button
             className="menu-button"
