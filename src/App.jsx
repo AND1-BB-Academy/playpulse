@@ -4,6 +4,8 @@ import './App.css'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
+const GAME_STORAGE_KEY = 'playpulse-pro-game-data-v1'
+
 const createInitialTeamState = (teamName) => ({
   teamName,
   newPlayer: '',
@@ -51,6 +53,7 @@ function App() {
 
   const [videoUrl, setVideoUrl] = useState(null)
   const videoRef = useRef(null)
+  const importGameInputRef = useRef(null)
   const [cameraStream, setCameraStream] = useState(null)
   const [isCameraActive, setIsCameraActive] = useState(false)
   const [cameraDevices, setCameraDevices] = useState([])
@@ -1272,6 +1275,195 @@ function App() {
     addLogNotesToPdf(pdf)
 
     pdf.save('playpulse-pro-report.pdf')
+  }
+
+  const saveGameData = () => {
+    if (!isPro) return
+
+    try {
+      const saveData = {
+        version: 1,
+        savedAt: new Date().toISOString(),
+
+        activeTeamKey,
+        teams,
+
+        quarter,
+        gameSeconds,
+        periodLength,
+
+        isTimerRunning: false,
+      }
+
+      localStorage.setItem(GAME_STORAGE_KEY, JSON.stringify(saveData))
+
+      alert('試合データを保存しました。動画・カメラ映像は保存されません。')
+    } catch (error) {
+      console.error(error)
+      alert('試合データを保存できませんでした。')
+    }
+  }
+
+  const loadGameData = () => {
+    if (!isPro) return
+
+    const rawData = localStorage.getItem(GAME_STORAGE_KEY)
+
+    if (!rawData) {
+      alert('保存済みの試合データがありません。')
+      return
+    }
+
+    const shouldLoad = window.confirm(
+      '保存済みの試合データを読み込みます。現在の入力内容は上書きされます。'
+    )
+
+    if (!shouldLoad) return
+
+    try {
+      const savedData = JSON.parse(rawData)
+
+      if (!savedData?.teams?.teamA || !savedData?.teams?.teamB) {
+        alert('保存データの形式が正しくありません。')
+        return
+      }
+
+      if (cameraStream) {
+        cameraStream.getTracks().forEach((track) => track.stop())
+      }
+
+      setCameraStream(null)
+      setIsCameraActive(false)
+      setVideoUrl(null)
+
+      setIsTimerRunning(false)
+
+      setTeams(savedData.teams)
+      setActiveTeamKey(savedData.activeTeamKey || 'teamA')
+
+      setQuarter(savedData.quarter || 1)
+      setPeriodLength(savedData.periodLength || 10 * 60)
+      setGameSeconds(
+        Number.isFinite(savedData.gameSeconds)
+          ? savedData.gameSeconds
+          : savedData.periodLength || 10 * 60
+      )
+
+      alert('試合データを読み込みました。動画は必要に応じて再度読み込んでください。')
+    } catch (error) {
+      console.error(error)
+      alert('試合データを読み込めませんでした。')
+    }
+  }
+
+  const exportGameData = () => {
+    if (!isPro) return
+
+    try {
+      const saveData = {
+        version: 1,
+        savedAt: new Date().toISOString(),
+
+        activeTeamKey,
+        teams,
+
+        quarter,
+        gameSeconds,
+        periodLength,
+
+        isTimerRunning: false,
+      }
+
+      const jsonText = JSON.stringify(saveData, null, 2)
+      const blob = new Blob([jsonText], {
+        type: 'application/json',
+      })
+
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+
+      const dateText = new Date().toISOString().slice(0, 10)
+
+      link.href = url
+      link.download = `playpulse-game-${dateText}.json`
+
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error(error)
+      alert('試合データを書き出せませんでした。')
+    }
+  }
+
+  const importGameData = (event) => {
+    if (!isPro) return
+
+    const file = event.target.files?.[0]
+
+    event.target.value = ''
+
+    if (!file) return
+
+    if (!file.name.toLowerCase().endsWith('.json')) {
+      alert('JSONファイルを選択してください。')
+      return
+    }
+
+    const shouldLoad = window.confirm(
+      'JSONファイルから試合データを読み込みます。現在の入力内容は上書きされます。'
+    )
+
+    if (!shouldLoad) return
+
+    const reader = new FileReader()
+
+    reader.onload = () => {
+      try {
+        const savedData = JSON.parse(String(reader.result || ''))
+
+        if (!savedData?.teams?.teamA || !savedData?.teams?.teamB) {
+          alert('読み込んだファイルの形式が正しくありません。')
+          return
+        }
+
+        if (cameraStream) {
+          cameraStream.getTracks().forEach((track) => track.stop())
+        }
+
+        setCameraStream(null)
+        setIsCameraActive(false)
+        setVideoUrl(null)
+
+        setIsTimerRunning(false)
+
+        setTeams(savedData.teams)
+        setActiveTeamKey(savedData.activeTeamKey || 'teamA')
+
+        setQuarter(savedData.quarter || 1)
+        setPeriodLength(savedData.periodLength || 10 * 60)
+        setGameSeconds(
+          Number.isFinite(savedData.gameSeconds)
+            ? savedData.gameSeconds
+            : savedData.periodLength || 10 * 60
+        )
+
+        localStorage.setItem(GAME_STORAGE_KEY, JSON.stringify(savedData))
+
+        alert('試合データを読み込みました。動画は必要に応じて再度読み込んでください。')
+      } catch (error) {
+        console.error(error)
+        alert('試合データを読み込めませんでした。')
+      }
+    }
+
+    reader.onerror = () => {
+      alert('ファイルを読み込めませんでした。')
+    }
+
+    reader.readAsText(file)
   }
 
   const exportPdf = () => {
@@ -2511,6 +2703,50 @@ function App() {
         >
           PDF出力
         </button>
+
+        {isPro && (
+          <>
+            <button
+              type="button"
+              className="save-game-button"
+              onClick={saveGameData}
+            >
+              SAVE GAME
+            </button>
+
+            <button
+              type="button"
+              className="load-game-button"
+              onClick={loadGameData}
+            >
+              LOAD GAME
+            </button>
+
+            <button
+              type="button"
+              className="export-game-button"
+              onClick={exportGameData}
+            >
+              EXPORT DATA
+            </button>
+
+            <button
+              type="button"
+              className="import-game-button"
+              onClick={() => importGameInputRef.current?.click()}
+            >
+              IMPORT DATA
+            </button>
+
+            <input
+              ref={importGameInputRef}
+              type="file"
+              accept="application/json"
+              onChange={importGameData}
+              style={{ display: 'none' }}
+            />
+          </>
+        )}
 
         <select
           className="period-select"

@@ -975,3 +975,30 @@ body {
   background: #071a3a;
   color: #ffffff;
 }
+
+.save-game-button,
+.load-game-button,
+.export-game-button,
+.import-game-button {
+  background: #071a3a;
+  border: 1px solid #071a3a;
+  border-radius: 999px;
+
+  color: white;
+
+  padding: 8px 14px;
+
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+
+  cursor: pointer;
+}
+
+.save-game-button:hover,
+.load-game-button:hover,
+.export-game-button:hover,
+.import-game-button:hover {
+  background: #071a3a;
+  color: #ffffff;
+}
