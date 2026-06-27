@@ -51,6 +51,10 @@ function App() {
 
   const [videoUrl, setVideoUrl] = useState(null)
   const videoRef = useRef(null)
+  const [cameraStream, setCameraStream] = useState(null)
+  const [isCameraActive, setIsCameraActive] = useState(false)
+  const [cameraDevices, setCameraDevices] = useState([])
+  const [selectedCameraId, setSelectedCameraId] = useState('')
   const [periodLength, setPeriodLength] = useState(10 * 60)
   const [quarter, setQuarter] = useState(1)
   const [gameSeconds, setGameSeconds] = useState(10 * 60)
@@ -236,6 +240,23 @@ function App() {
     return () => clearInterval(timer)
   }, [isTimerRunning])
 
+  useEffect(() => {
+    if (!videoRef.current) return
+
+    if (cameraStream) {
+      videoRef.current.srcObject = cameraStream
+    } else {
+      videoRef.current.srcObject = null
+    }
+  }, [cameraStream])
+
+  useEffect(() => {
+    return () => {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach((track) => track.stop())
+      }
+    }
+  }, [cameraStream])
 
 
 
@@ -446,6 +467,109 @@ function App() {
 
     return '2PT'
   }
+  const startCamera = async () => {
+    if (!isPro) return
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      alert('このブラウザではカメラを使用できません')
+      return
+    }
+
+    if (!selectedCameraId) {
+      alert('使用するカメラを選択してください')
+      return
+    }
+
+    try {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach((track) => track.stop())
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          deviceId: {
+            exact: selectedCameraId,
+          },
+          width: {
+            ideal: 1920,
+          },
+          height: {
+            ideal: 1080,
+          },
+        },
+        audio: false,
+      })
+
+      setVideoUrl(null)
+      setCameraStream(stream)
+      setIsCameraActive(true)
+
+      await loadCameraDevices()
+    } catch (error) {
+      console.error(error)
+      alert('選択したカメラを起動できませんでした。接続・許可・使用中のアプリを確認してください。')
+    }
+  }
+
+  const stopCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((track) => track.stop())
+    }
+
+    setCameraStream(null)
+    setIsCameraActive(false)
+  }
+
+  const loadCameraDevices = async () => {
+    if (!isPro) return
+
+    if (!navigator.mediaDevices?.enumerateDevices) {
+      alert('このブラウザではカメラ一覧を取得できません')
+      return
+    }
+
+    try {
+      let permissionStream = null
+
+      try {
+        permissionStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        })
+      } catch (permissionError) {
+        console.warn(permissionError)
+      }
+
+      if (permissionStream) {
+        permissionStream.getTracks().forEach((track) => track.stop())
+      }
+
+      const devices = await navigator.mediaDevices.enumerateDevices()
+
+      const videoDevices = devices.filter(
+        (device) =>
+          device.kind === 'videoinput' &&
+          device.deviceId
+      )
+
+      setCameraDevices(videoDevices)
+
+      setSelectedCameraId((prev) => {
+        if (videoDevices.some((device) => device.deviceId === prev)) {
+          return prev
+        }
+
+        if (videoDevices.length === 1) {
+          return videoDevices[0].deviceId
+        }
+
+        return ''
+      })
+    } catch (error) {
+      console.error(error)
+      alert('カメラ一覧を取得できませんでした')
+    }
+  }
 
   const handleVideoDrop = (e) => {
     e.preventDefault()
@@ -458,6 +582,13 @@ function App() {
       alert('動画ファイルを選択してください')
       return
     }
+
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((track) => track.stop())
+    }
+
+    setCameraStream(null)
+    setIsCameraActive(false)
 
     const url = URL.createObjectURL(file)
     setVideoUrl(url)
@@ -1479,7 +1610,7 @@ function App() {
         return
       }
 
-      if (video) {
+      if (video && !video.srcObject) {
         if (e.key === 'ArrowLeft') {
           e.preventDefault()
           video.currentTime = Math.max(0, video.currentTime - 5)
@@ -2094,7 +2225,15 @@ function App() {
             onDrop={handleVideoDrop}
             onDragOver={handleDragOver}
           >
-            {videoUrl ? (
+            {isCameraActive ? (
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="video-player"
+              />
+            ) : videoUrl ? (
               <video
                 ref={videoRef}
                 src={videoUrl}
@@ -2106,6 +2245,50 @@ function App() {
                 MP4動画をドラッグ&ドロップ
               </div>
             )}
+
+            {isPro && (
+              <div className="camera-controls">
+                <select
+                  value={selectedCameraId}
+                  onChange={(e) => setSelectedCameraId(e.target.value)}
+                >
+                  <option value="">SELECT CAMERA</option>
+
+                  {cameraDevices.map((device, index) => (
+                    <option
+                      key={device.deviceId || index}
+                      value={device.deviceId}
+                    >
+                      {device.label || `CAMERA ${index + 1}`}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={loadCameraDevices}
+                >
+                  カメラ更新
+                </button>
+
+                {!isCameraActive ? (
+                  <button
+                    type="button"
+                    onClick={startCamera}
+                  >
+                    CAMERA
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={stopCamera}
+                  >
+                    STOP
+                  </button>
+                )}
+              </div>
+            )}
+
           </div>
 
           <div className="inline-log-panel">
