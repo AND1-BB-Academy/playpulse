@@ -58,6 +58,8 @@ function App() {
   const [isCameraActive, setIsCameraActive] = useState(false)
   const [cameraDevices, setCameraDevices] = useState([])
   const [selectedCameraId, setSelectedCameraId] = useState('')
+  const [lastAutoSavedAt, setLastAutoSavedAt] = useState(null)
+  const [isAutoSaveReady, setIsAutoSaveReady] = useState(false)
   const [periodLength, setPeriodLength] = useState(10 * 60)
   const [quarter, setQuarter] = useState(1)
   const [gameSeconds, setGameSeconds] = useState(10 * 60)
@@ -83,6 +85,29 @@ function App() {
   } = activeTeam
 
 
+  const hasGameDataToSave = (targetTeams) => {
+    const teamList = Object.values(targetTeams || {})
+
+    return teamList.some((targetTeam) => {
+      const rosterCount =
+        (targetTeam.bench?.length || 0) +
+        (targetTeam.onCourt?.length || 0)
+
+      const shotCount = targetTeam.shots?.length || 0
+      const eventCount = targetTeam.events?.length || 0
+
+      const hasCustomTeamName =
+        targetTeam.teamName &&
+        !['HOME', 'AWAY'].includes(targetTeam.teamName)
+
+      return (
+        rosterCount > 0 ||
+        shotCount > 0 ||
+        eventCount > 0 ||
+        hasCustomTeamName
+      )
+    })
+  }
 
   const updateTeamField = (teamKey, field, nextValue) => {
     setTeams((prev) => {
@@ -1303,6 +1328,59 @@ function App() {
       alert('試合データを保存できませんでした。')
     }
   }
+
+  useEffect(() => {
+    if (!isPro) return
+
+    const timerId = window.setTimeout(() => {
+      setIsAutoSaveReady(true)
+    }, 1500)
+
+    return () => {
+      window.clearTimeout(timerId)
+    }
+  }, [isPro])
+
+  useEffect(() => {
+    if (!isPro) return
+    if (!isAutoSaveReady) return
+    if (!hasGameDataToSave(teams)) return
+
+    const timeoutId = window.setTimeout(() => {
+      try {
+        const saveData = {
+          version: 1,
+          savedAt: new Date().toISOString(),
+
+          activeTeamKey,
+          teams,
+
+          quarter,
+          gameSeconds,
+          periodLength,
+
+          isTimerRunning: false,
+        }
+
+        localStorage.setItem(GAME_STORAGE_KEY, JSON.stringify(saveData))
+        setLastAutoSavedAt(new Date())
+      } catch (error) {
+        console.error('Auto save failed:', error)
+      }
+    }, 700)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [
+    isPro,
+    isAutoSaveReady,
+    activeTeamKey,
+    teams,
+    quarter,
+    gameSeconds,
+    periodLength,
+  ])
 
   const loadGameData = () => {
     if (!isPro) return
@@ -2745,6 +2823,15 @@ function App() {
               onChange={importGameData}
               style={{ display: 'none' }}
             />
+            {lastAutoSavedAt && (
+              <span className="auto-save-status">
+                自動保存済み{' '}
+                {lastAutoSavedAt.toLocaleTimeString('ja-JP', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
+            )}
           </>
         )}
 

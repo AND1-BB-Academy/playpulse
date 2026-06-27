@@ -1002,3 +1002,16 @@ body {
   background: #071a3a;
   color: #ffffff;
 }
+
+.auto-save-status {
+  color: #071a3a;
+
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+
+  padding: 0 8px;
+
+  white-space: nowrap;
+  opacity: 0.75;
+}
