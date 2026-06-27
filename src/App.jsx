@@ -2705,22 +2705,7 @@ function App() {
 
   return (
     <div className="app">
-      <div
-        style={{
-          position: 'fixed',
-          top: 8,
-          right: 8,
-          zIndex: 9999,
-          padding: '6px 10px',
-          borderRadius: 8,
-          background: '#071A3A',
-          color: '#fff',
-          fontSize: 12,
-          fontWeight: 700,
-        }}
-      >
-        PLAN: {planLoading ? 'LOADING' : isPro ? 'PRO' : 'PROプランへ'}
-      </div>
+    
 
       <header className="top-bar">
         <div className="brand-area">
