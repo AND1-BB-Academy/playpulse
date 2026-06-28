@@ -36,38 +36,10 @@ const getRawBody = async (req) => {
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
     }
 
-    if (chunks.length > 0) {
-        return Buffer.concat(chunks)
-    }
-
-    if (Buffer.isBuffer(req.body)) {
-        return req.body
-    }
-
-    if (typeof req.body === 'string') {
-        return Buffer.from(req.body, 'utf8')
-    }
-
-    if (req.body && typeof req.body === 'object') {
-        return Buffer.from(JSON.stringify(req.body), 'utf8')
-    }
-
-    return Buffer.alloc(0)
+    return Buffer.concat(chunks)
 }
 
-const parseEventPayload = (req, rawBody) => {
-    if (req.body && typeof req.body === 'object') {
-        return req.body
-    }
 
-    const text = rawBody?.toString('utf8') || ''
-
-    if (!text) {
-        return null
-    }
-
-    return JSON.parse(text)
-}
 
 const parseEventForLocalTest = (req, rawBody) => {
     const parsedEvent = parseEventPayload(req, rawBody)
@@ -79,22 +51,7 @@ const parseEventForLocalTest = (req, rawBody) => {
     return parsedEvent
 }
 
-const getEventFromStripeApi = async (stripe, req, rawBody, originalError) => {
-    const parsedEvent = parseEventPayload(req, rawBody)
-    const eventId = parsedEvent?.id
 
-    if (!eventId || typeof eventId !== 'string' || !eventId.startsWith('evt_')) {
-        throw originalError
-    }
-
-    const stripeEvent = await stripe.events.retrieve(eventId)
-
-    if (!stripeEvent?.id || stripeEvent.id !== eventId) {
-        throw originalError
-    }
-
-    return stripeEvent
-}
 
 const getFirestoreDb = () => {
     if (!getApps().length) {
@@ -350,51 +307,24 @@ export default async function handler(req, res) {
         rawBody = await getRawBody(req)
 
         if (!signature) {
-            throw new Error('stripe-signature header is missing')
+            return res
+                .status(400)
+                .send('Webhook Error: stripe-signature header is missing')
         }
 
         if (!process.env.STRIPE_WEBHOOK_SECRET) {
-            throw new Error('STRIPE_WEBHOOK_SECRET is missing')
+            return res
+                .status(500)
+                .send('Webhook Error: STRIPE_WEBHOOK_SECRET is missing')
         }
 
-        try {
-            event = stripe.webhooks.constructEvent(
-                rawBody,
-                signature,
-                process.env.STRIPE_WEBHOOK_SECRET
-            )
-        } catch (signatureError) {
-            const isLocalTest = process.env.NODE_ENV !== 'production'
-
-            if (isLocalTest) {
-                event = parseEventForLocalTest(req, rawBody)
-                console.warn(`Local webhook signature skipped: ${event.type}`)
-            } else {
-                console.warn('Webhook signature failed. Trying Stripe API event retrieve fallback.', {
-                    message: signatureError.message,
-                    rawBodyLength: rawBody.length,
-                    hasReqBody: Boolean(req.body),
-                })
-
-                event = await getEventFromStripeApi(
-                    stripe,
-                    req,
-                    rawBody,
-                    signatureError
-                )
-
-                if (!event.livemode) {
-                    return res.status(400).send('Webhook Error: non-live event rejected')
-                }
-
-                console.warn(`Webhook event verified by Stripe API fallback: ${event.type}`)
-            }
-        }
+        event = stripe.webhooks.constructEvent(
+            rawBody,
+            signature,
+            process.env.STRIPE_WEBHOOK_SECRET
+        )
     } catch (error) {
-        console.error('Webhook verification failed:', {
-            message: error.message,
-            stack: error.stack,
-        })
+        console.error('Webhook verification failed:', error.message)
 
         return res.status(400).send(`Webhook Error: ${error.message}`)
     }
