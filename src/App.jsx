@@ -264,6 +264,38 @@ function App() {
     }
   }
 
+  const handleBillingPortal = async () => {
+    if (!authUser) {
+      setShowAuthPanel(true)
+      return
+    }
+
+    try {
+      const response = await fetch('/api/create-portal-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          uid: authUser.uid,
+        }),
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || !data?.url) {
+        throw new Error(
+          data?.error || `Portal session failed: ${response.status}`
+        )
+      }
+
+      window.location.href = data.url
+    } catch (error) {
+      console.error(error)
+      alert(`支払い・解約管理ページを開けませんでした。\n\n${error.message}`)
+    }
+  }
+
 
   const hasGameDataToSave = (targetTeams) => {
     const teamList = Object.values(targetTeams || {})
@@ -2669,9 +2701,20 @@ function App() {
           <p>現在のプラン：{isPro ? 'PRO' : 'FREE'}</p>
 
           {isPro ? (
-            <p className="auth-note">
-              現在、PlayPulse Proをご利用中です。
-            </p>
+            <>
+              <p className="auth-note">
+                現在、PlayPulse Proをご利用中です。
+                支払い方法の変更や解約は、Stripeの管理画面から行えます。
+              </p>
+
+              <button
+                type="button"
+                className="auth-google-button"
+                onClick={handleBillingPortal}
+              >
+                支払い・解約管理
+              </button>
+            </>
           ) : (
             <>
               <p className="auth-note">
