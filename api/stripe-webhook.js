@@ -106,11 +106,15 @@ const getFirestoreDb = () => {
 }
 
 const getCurrentPeriodEnd = (subscription) => {
-    if (!subscription?.current_period_end) {
+    const currentPeriodEnd =
+        subscription?.current_period_end ||
+        subscription?.items?.data?.[0]?.current_period_end
+
+    if (!currentPeriodEnd) {
         return null
     }
 
-    return new Date(subscription.current_period_end * 1000).toISOString()
+    return new Date(currentPeriodEnd * 1000).toISOString()
 }
 
 const getSubscriptionId = (subscription) => {
@@ -258,12 +262,25 @@ export default async function handler(req, res) {
 
     const signature = req.headers['stripe-signature']
 
+    if (!signature) {
+        return res
+            .status(400)
+            .send('Webhook Error: stripe-signature header is missing')
+    }
+
+    if (!process.env.STRIPE_WEBHOOK_SECRET) {
+        return res
+            .status(500)
+            .send('Webhook Error: STRIPE_WEBHOOK_SECRET is missing')
+    }
+
     let event
-    let rawBody
 
     try {
         const stripe = getStripe()
-        rawBody = await getRawBody(req)
+
+        // raw bodyは絶対に1回だけ読む
+        const rawBody = await getRawBody(req)
 
         event = stripe.webhooks.constructEvent(
             rawBody,
@@ -271,20 +288,8 @@ export default async function handler(req, res) {
             process.env.STRIPE_WEBHOOK_SECRET
         )
     } catch (error) {
-        const isLocalTest = process.env.NODE_ENV !== 'production'
-
-        if (!isLocalTest) {
-            console.error('Webhook signature verification failed:', error.message)
-            return res.status(400).send(`Webhook Error: ${error.message}`)
-        }
-
-        try {
-            event = parseEventForLocalTest(req, rawBody)
-            console.warn(`Local webhook signature skipped: ${event.type}`)
-        } catch (parseError) {
-            console.error('Webhook parse failed:', parseError.message)
-            return res.status(400).send(`Webhook Error: ${parseError.message}`)
-        }
+        console.error('Webhook signature verification failed:', error.message)
+        return res.status(400).send(`Webhook Error: ${error.message}`)
     }
 
     const handledEvents = [
@@ -303,29 +308,100 @@ export default async function handler(req, res) {
 
     try {
         const stripe = getStripe()
+        const db = getFirestoreDb()
 
-        rawBody = await getRawBody(req)
+        switch (event.type) {
+            case 'checkout.session.completed': {
+                const session = event.data.object
 
-        if (!signature) {
-            return res
-                .status(400)
-                .send('Webhook Error: stripe-signature header is missing')
+                const uidFromSession = getUidFromSession(session)
+
+                const subscriptionId = getSubscriptionId(session.subscription)
+                const stripeCustomerId = getCustomerId(session.customer)
+
+                let subscription = null
+
+                if (subscriptionId) {
+                    subscription = await stripe.subscriptions.retrieve(
+                        subscriptionId,
+                        {
+                            expand: ['items.data'],
+                        }
+                    )
+                }
+
+                const uid =
+                    uidFromSession ||
+                    getUidFromSubscription(subscription)
+
+                await updateUserToPro({
+                    db,
+                    uid,
+                    stripeCustomerId:
+                        stripeCustomerId ||
+                        getCustomerId(subscription?.customer),
+                    stripeSubscriptionId:
+                        subscriptionId ||
+                        subscription?.id ||
+                        '',
+                    subscriptionStatus:
+                        subscription?.status ||
+                        'active',
+                    currentPeriodEnd:
+                        getCurrentPeriodEnd(subscription),
+                    cancelAtPeriodEnd:
+                        subscription?.cancel_at_period_end,
+                    source: 'checkout.session.completed',
+                })
+
+                break
+            }
+
+            case 'customer.subscription.created':
+            case 'customer.subscription.updated': {
+                const subscription = event.data.object
+                const uid = getUidFromSubscription(subscription)
+
+                await updateUserSubscriptionStatus({
+                    db,
+                    uid,
+                    subscription,
+                })
+
+                break
+            }
+
+            case 'customer.subscription.deleted': {
+                const subscription = event.data.object
+                const uid = getUidFromSubscription(subscription)
+
+                await downgradeUserToFree({
+                    db,
+                    uid,
+                    subscription,
+                })
+
+                break
+            }
+
+            default:
+                break
         }
 
-        if (!process.env.STRIPE_WEBHOOK_SECRET) {
-            return res
-                .status(500)
-                .send('Webhook Error: STRIPE_WEBHOOK_SECRET is missing')
-        }
-
-        event = stripe.webhooks.constructEvent(
-            rawBody,
-            signature,
-            process.env.STRIPE_WEBHOOK_SECRET
-        )
+        return res.status(200).json({
+            received: true,
+            handled: event.type,
+        })
     } catch (error) {
-        console.error('Webhook verification failed:', error.message)
+        console.error('Webhook handling failed:', {
+            eventType: event?.type,
+            eventId: event?.id,
+            message: error.message,
+            stack: error.stack,
+        })
 
-        return res.status(400).send(`Webhook Error: ${error.message}`)
+        return res
+            .status(500)
+            .send(`Webhook handling failed: ${error.message}`)
     }
 }
