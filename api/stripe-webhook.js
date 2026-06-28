@@ -30,6 +30,16 @@ const getStripe = () => {
 }
 
 const getRawBody = async (req) => {
+    const chunks = []
+
+    for await (const chunk of req) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+    }
+
+    if (chunks.length > 0) {
+        return Buffer.concat(chunks)
+    }
+
     if (Buffer.isBuffer(req.body)) {
         return req.body
     }
@@ -42,21 +52,48 @@ const getRawBody = async (req) => {
         return Buffer.from(JSON.stringify(req.body), 'utf8')
     }
 
-    const chunks = []
-
-    for await (const chunk of req) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
-    }
-
-    return Buffer.concat(chunks)
+    return Buffer.alloc(0)
 }
 
-const parseEventForLocalTest = (req, rawBody) => {
+const parseEventPayload = (req, rawBody) => {
     if (req.body && typeof req.body === 'object') {
         return req.body
     }
 
-    return JSON.parse(rawBody.toString('utf8'))
+    const text = rawBody?.toString('utf8') || ''
+
+    if (!text) {
+        return null
+    }
+
+    return JSON.parse(text)
+}
+
+const parseEventForLocalTest = (req, rawBody) => {
+    const parsedEvent = parseEventPayload(req, rawBody)
+
+    if (!parsedEvent) {
+        throw new Error('Webhook payload is empty')
+    }
+
+    return parsedEvent
+}
+
+const getEventFromStripeApi = async (stripe, req, rawBody, originalError) => {
+    const parsedEvent = parseEventPayload(req, rawBody)
+    const eventId = parsedEvent?.id
+
+    if (!eventId || typeof eventId !== 'string' || !eventId.startsWith('evt_')) {
+        throw originalError
+    }
+
+    const stripeEvent = await stripe.events.retrieve(eventId)
+
+    if (!stripeEvent?.id || stripeEvent.id !== eventId) {
+        throw originalError
+    }
+
+    return stripeEvent
 }
 
 const getFirestoreDb = () => {
@@ -309,110 +346,56 @@ export default async function handler(req, res) {
 
     try {
         const stripe = getStripe()
-        const db = getFirestoreDb()
 
-        if (event.type === 'checkout.session.completed') {
-            const session = event.data.object
-            const uid = getUidFromSession(session)
+        rawBody = await getRawBody(req)
 
-            if (!uid) {
-                console.warn('checkout.session.completed skipped: uid missing', {
-                    sessionId: session.id,
-                    customer: getCustomerId(session.customer),
-                    subscription: getSubscriptionId(session.subscription),
-                    clientReferenceId: session.client_reference_id || '',
-                    metadata: session.metadata || {},
+        if (!signature) {
+            throw new Error('stripe-signature header is missing')
+        }
+
+        if (!process.env.STRIPE_WEBHOOK_SECRET) {
+            throw new Error('STRIPE_WEBHOOK_SECRET is missing')
+        }
+
+        try {
+            event = stripe.webhooks.constructEvent(
+                rawBody,
+                signature,
+                process.env.STRIPE_WEBHOOK_SECRET
+            )
+        } catch (signatureError) {
+            const isLocalTest = process.env.NODE_ENV !== 'production'
+
+            if (isLocalTest) {
+                event = parseEventForLocalTest(req, rawBody)
+                console.warn(`Local webhook signature skipped: ${event.type}`)
+            } else {
+                console.warn('Webhook signature failed. Trying Stripe API event retrieve fallback.', {
+                    message: signatureError.message,
+                    rawBodyLength: rawBody.length,
+                    hasReqBody: Boolean(req.body),
                 })
 
-                return res.status(200).json({
-                    received: true,
-                    skipped: 'uid missing',
-                })
+                event = await getEventFromStripeApi(
+                    stripe,
+                    req,
+                    rawBody,
+                    signatureError
+                )
+
+                if (!event.livemode) {
+                    return res.status(400).send('Webhook Error: non-live event rejected')
+                }
+
+                console.warn(`Webhook event verified by Stripe API fallback: ${event.type}`)
             }
-
-            const subscriptionId = getSubscriptionId(session.subscription)
-
-            if (!subscriptionId) {
-                await updateUserToPro({
-                    db,
-                    uid,
-                    stripeCustomerId: getCustomerId(session.customer),
-                    stripeSubscriptionId: '',
-                    subscriptionStatus: 'active',
-                    currentPeriodEnd: null,
-                    cancelAtPeriodEnd: false,
-                    source: 'checkout session without subscription id',
-                })
-
-                return res.status(200).json({
-                    received: true,
-                })
-            }
-
-            const subscription = await stripe.subscriptions.retrieve(subscriptionId)
-
-            await updateUserToPro({
-                db,
-                uid,
-                stripeCustomerId:
-                    getCustomerId(session.customer) ||
-                    getCustomerId(subscription.customer),
-                stripeSubscriptionId: subscription.id,
-                subscriptionStatus: subscription.status,
-                currentPeriodEnd: getCurrentPeriodEnd(subscription),
-                cancelAtPeriodEnd: subscription.cancel_at_period_end,
-                source: 'checkout session',
-            })
         }
-
-        if (event.type === 'customer.subscription.created') {
-            const subscription = event.data.object
-            const uid = getUidFromSubscription(subscription)
-
-            await updateUserToPro({
-                db,
-                uid,
-                stripeCustomerId: getCustomerId(subscription.customer),
-                stripeSubscriptionId: subscription.id,
-                subscriptionStatus: subscription.status,
-                currentPeriodEnd: getCurrentPeriodEnd(subscription),
-                cancelAtPeriodEnd: subscription.cancel_at_period_end,
-                source: 'subscription created',
-            })
-        }
-
-        if (event.type === 'customer.subscription.updated') {
-            const subscription = event.data.object
-            const uid = getUidFromSubscription(subscription)
-
-            await updateUserSubscriptionStatus({
-                db,
-                uid,
-                subscription,
-            })
-        }
-
-        if (event.type === 'customer.subscription.deleted') {
-            const subscription = event.data.object
-            const uid = getUidFromSubscription(subscription)
-
-            await downgradeUserToFree({
-                db,
-                uid,
-                subscription,
-            })
-        }
-
-        return res.status(200).json({
-            received: true,
-        })
     } catch (error) {
-        console.error('Webhook handler failed:', {
+        console.error('Webhook verification failed:', {
             message: error.message,
             stack: error.stack,
-            eventType: event?.type,
         })
 
-        return res.status(500).send(error.message || 'Webhook handler failed')
+        return res.status(400).send(`Webhook Error: ${error.message}`)
     }
 }
