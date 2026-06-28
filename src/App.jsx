@@ -2661,59 +2661,59 @@ function App() {
   }
 
   if (showAuthPanel && authUser) {
-  return (
-    <div className="auth-screen">
-      <div className="auth-card">
-        <h1>PlayPulse Pro</h1>
-        <p>ログイン中：{authUser.email}</p>
-        <p>現在のプラン：{isPro ? 'PRO' : 'FREE'}</p>
+    return (
+      <div className="auth-screen">
+        <div className="auth-card">
+          <h1>PlayPulse Pro</h1>
+          <p>ログイン中：{authUser.email}</p>
+          <p>現在のプラン：{isPro ? 'PRO' : 'FREE'}</p>
 
-        {isPro ? (
-          <p className="auth-note">
-            現在、PlayPulse Proをご利用中です。
-          </p>
-        ) : (
-          <>
+          {isPro ? (
             <p className="auth-note">
-              PlayPulse Proは月額1,100円（税込）でご利用いただけます。
-              解約後も、すでにお支払い済みの期間が終了するまではPro機能をご利用いただけます。
+              現在、PlayPulse Proをご利用中です。
             </p>
+          ) : (
+            <>
+              <p className="auth-note">
+                PlayPulse Proは月額1,100円（税込）でご利用いただけます。
+                解約後も、すでにお支払い済みの期間が終了するまではPro機能をご利用いただけます。
+              </p>
 
-            <button
-              type="button"
-              className="auth-google-button"
-              onClick={handleCheckout}
-            >
-              月額1,100円で購入する
-            </button>
-          </>
-        )}
+              <button
+                type="button"
+                className="auth-google-button"
+                onClick={handleCheckout}
+              >
+                月額1,100円で購入する
+              </button>
+            </>
+          )}
 
-        <button
-          type="button"
-          className="auth-google-button"
-          onClick={handleLogout}
-        >
-          ログアウト
-        </button>
+          <button
+            type="button"
+            className="auth-google-button"
+            onClick={handleLogout}
+          >
+            ログアウト
+          </button>
 
-        <button
-          type="button"
-          className="auth-switch-button"
-          onClick={() => setShowAuthPanel(false)}
-        >
-          無料版に戻る
-        </button>
+          <button
+            type="button"
+            className="auth-switch-button"
+            onClick={() => setShowAuthPanel(false)}
+          >
+            HOMEに戻る
+          </button>
+        </div>
       </div>
-    </div>
-  )
-}
+    )
+  }
 
 
 
   return (
     <div className="app">
-    
+
 
       <header className="top-bar">
         <div className="brand-area">
@@ -2758,11 +2758,7 @@ function App() {
           <button
             type="button"
             className="pro-badge"
-            onClick={() => {
-              if (!isPro) {
-                setShowAuthPanel(true)
-              }
-            }}
+            onClick={() => setShowAuthPanel(true)}
           >
             {isPro ? 'PRO' : 'PROプランへ'}
           </button>
