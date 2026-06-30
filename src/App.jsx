@@ -2818,6 +2818,9 @@ function App() {
               <a href="/terms.html">利用規約</a>
               <a href="/privacy.html">プライバシーポリシー</a>
               <a href="/contact.html">お問い合わせ</a>
+              <a href="/playpulse-manual.pdf" target="_blank" rel="noreferrer">
+                説明書（PDF）
+              </a>
             </div>
           )}
         </div>

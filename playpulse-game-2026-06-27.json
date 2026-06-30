@@ -1,0 +1,210 @@
+{
+  "version": 1,
+  "savedAt": "2026-06-27T04:50:21.310Z",
+  "activeTeamKey": "teamA",
+  "teams": {
+    "teamA": {
+      "teamName": "HOME",
+      "newPlayer": "",
+      "bench": [],
+      "onCourt": [
+        "1",
+        "2",
+        "3"
+      ],
+      "shots": [
+        {
+          "id": 1782535621495,
+          "teamKey": "teamA",
+          "player": "1",
+          "x": 47.12486267089844,
+          "y": 54.335487365722656,
+          "shotType": "3PT",
+          "result": "make",
+          "quarter": 1,
+          "clock": "10:00",
+          "note": ""
+        },
+        {
+          "id": 1782535627544,
+          "teamKey": "teamA",
+          "player": "2",
+          "x": 75.02217864990234,
+          "y": 49.794063568115234,
+          "shotType": "3PT",
+          "result": "make",
+          "quarter": 1,
+          "clock": "10:00",
+          "note": ""
+        },
+        {
+          "id": 1782535632311,
+          "teamKey": "teamA",
+          "player": "3",
+          "x": 50.368736267089844,
+          "y": 24.816240310668945,
+          "shotType": "2PT",
+          "result": "make",
+          "quarter": 1,
+          "clock": "10:00",
+          "note": ""
+        },
+        {
+          "id": 1782535635783,
+          "teamKey": "teamA",
+          "player": "3",
+          "x": null,
+          "y": null,
+          "shotType": "FT",
+          "result": "make",
+          "quarter": 1,
+          "clock": "10:00",
+          "note": ""
+        },
+        {
+          "id": 1782535636989,
+          "teamKey": "teamA",
+          "player": "3",
+          "x": null,
+          "y": null,
+          "shotType": "FT",
+          "result": "miss",
+          "quarter": 1,
+          "clock": "10:00",
+          "note": ""
+        }
+      ],
+      "events": [
+        {
+          "id": 1782535624392,
+          "teamKey": "teamA",
+          "player": "2",
+          "eventType": "TOV",
+          "quarter": 1,
+          "clock": "10:00",
+          "note": ""
+        },
+        {
+          "id": 1782535626177,
+          "teamKey": "teamA",
+          "player": "2",
+          "eventType": "ORB",
+          "quarter": 1,
+          "clock": "10:00",
+          "note": ""
+        }
+      ],
+      "selectedPlayer": "3",
+      "subOutPlayer": "3",
+      "playerMinutes": {
+        "1": {
+          "totalSeconds": 0,
+          "currentInAt": 600
+        },
+        "2": {
+          "totalSeconds": 0,
+          "currentInAt": 600
+        },
+        "3": {
+          "totalSeconds": 0,
+          "currentInAt": 600
+        }
+      },
+      "draggingPlayer": null
+    },
+    "teamB": {
+      "teamName": "AWAY",
+      "newPlayer": "",
+      "bench": [],
+      "onCourt": [
+        "6",
+        "7",
+        "8"
+      ],
+      "shots": [
+        {
+          "id": 1782535586579,
+          "teamKey": "teamB",
+          "player": "8",
+          "x": 76.88174438476562,
+          "y": 58.87749099731445,
+          "shotType": "3PT",
+          "result": "miss",
+          "quarter": 1,
+          "clock": "10:00",
+          "note": ""
+        },
+        {
+          "id": 1782535588945,
+          "teamKey": "teamB",
+          "player": "8",
+          "x": 52.227684020996094,
+          "y": 30.33068084716797,
+          "shotType": "2PT",
+          "result": "make",
+          "quarter": 1,
+          "clock": "10:00",
+          "note": ""
+        },
+        {
+          "id": 1782535594145,
+          "teamKey": "teamB",
+          "player": "7",
+          "x": 46.064170837402344,
+          "y": 51.740787506103516,
+          "shotType": "2PT",
+          "result": "make",
+          "quarter": 1,
+          "clock": "10:00",
+          "note": ""
+        },
+        {
+          "id": 1782535599378,
+          "teamKey": "teamB",
+          "player": "7",
+          "x": 21.410106658935547,
+          "y": 49.79441452026367,
+          "shotType": "3PT",
+          "result": "miss",
+          "quarter": 1,
+          "clock": "10:00",
+          "note": "baka"
+        },
+        {
+          "id": 1782535611911,
+          "teamKey": "teamB",
+          "player": "6",
+          "x": 73.6377944946289,
+          "y": 54.66034698486328,
+          "shotType": "3PT",
+          "result": "make",
+          "quarter": 1,
+          "clock": "10:00",
+          "note": ""
+        }
+      ],
+      "events": [],
+      "selectedPlayer": "6",
+      "subOutPlayer": "6",
+      "playerMinutes": {
+        "6": {
+          "totalSeconds": 0,
+          "currentInAt": 600
+        },
+        "7": {
+          "totalSeconds": 0,
+          "currentInAt": 600
+        },
+        "8": {
+          "totalSeconds": 0,
+          "currentInAt": 600
+        }
+      },
+      "draggingPlayer": null
+    }
+  },
+  "quarter": 1,
+  "gameSeconds": 597,
+  "periodLength": 600,
+  "isTimerRunning": false
+}
